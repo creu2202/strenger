@@ -22,22 +22,10 @@ const PROJECT_TABS = {
 };
 
 const PROJECTS = [
-  { name: "202303_Pankow_Heinersdorf", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=d5880456-887e-4060-8aff-269d4c62215f" },
-  { name: "Ladenburg 2", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=47384be7-297c-47a0-9f69-76a40aa98d84" },
-  { name: "21901 Hanau IA", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=f3c0cf31-82f9-438e-8f50-00023a9d5016" },
-  { name: "202012 Heilbronn Neckarbogen K3", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=1423d270-7005-4fc3-ab74-3a23315b6088" },
-  { name: "02013 – Heilbronn Neckarbogen M7", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=7e69cb6c-98d0-4e2a-ad90-779b973e8ad0" },
-  { name: "202119_Pfullingen", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=95932af3-ba35-47dd-b135-46e72b8b7265" },
-  { name: "BS Neckartailfingen", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=1144bc09-9453-42a3-a62a-786186fb4eca" },
-  { name: "Frickenhausen neu ", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=5a79ed65-48db-45f5-8b36-e3de06f53407" },
-  { name: "202501 Reutlingen", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=e150ee2d-7349-4af9-8ab7-13b0fc884a67" },
-  { name: "202402 – Kirchheim am Neckar", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=0dc7cfab-34b5-4ec3-9385-6e47a71e6998" },
-  { name: "Pfungstadt Ost-West-Süd", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=0fb936f8-dd63-4322-898f-6e4757138e85" },
-  { name: "21504 – Ditzingen MFH NEU", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=3e01325e-dcc1-4a5b-be93-68f4d094c9c7" },
-  { name: "21506_Ditzingen REH", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=8967aa6e-a354-4d59-a159-35a3e9789e3b" },
+  { name: "KW15 Coating", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=b4470c8e-05e0-4bdb-bc49-0335c97427c7" },
 ];
 
-const TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI3N2U3OGMyMC0yNmVhLTQ3OWQtYjIzMS00MGRkNzIxYWZiNDEiLCJlbWFpbCI6ImNocmlzdGlhbi5yZXV0ZXJAbGNtZGlnaXRhbC5jb20iLCJ0cyI6NTk3LCJsaWMiOnsiZWRpdCI6MX0sImlhdCI6MTczMjg3MTE1NH0.Au3piiNYXkgU49fgccGGoqhXcJoll5lpNH3oVdmSiMs";
+const TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI3N2U3OGMyMC0yNmVhLTQ3OWQtYjIzMS00MGRkNzIxYWZiNDEiLCJlbWFpbCI6ImNocmlzdGlhbi5yZXV0ZXJAbGNtZGlnaXRhbC5jb20iLCJ0cyI6NjQ4LCJsaWMiOnsiZWRpdCI6MX0sImlhdCI6MTc0MTE4MzQ5Mn0.a42tshg1OH8gzYu0AsEaeymx8ebWOdNA2rZzz9rdd1c";
 
 const fetchData = async () => {
   let projectData = {};
