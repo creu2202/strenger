@@ -148,10 +148,18 @@ const createEmptyArea = () => ({
   heading: "Flächenterminplan"
 });
 
+const STORAGE_KEY = "auftragssummen";
+const getStorageKey = (projectId, weekNumber) => `${STORAGE_KEY}-${projectId}-KW${weekNumber}`;
+
+
 const AuftragssummenModul = ({ data, selectedProject }) => {
   const [tasks, setTasks] = useState([]);
   const [highlightedId, setHighlightedId] = useState(null);
   const [areas, setAreas] = useState([createEmptyArea()]);
+  const [searchText, setSearchText] = useState("");
+const [selectedTrade, setSelectedTrade] = useState("");
+const [selectedZone, setSelectedZone] = useState("");
+
 
   const today = new Date();
   const getStartOfWeek = (date) => {
@@ -179,8 +187,13 @@ const AuftragssummenModul = ({ data, selectedProject }) => {
 
   useEffect(() => {
     if (!selectedProject || !data[selectedProject]) return;
+  
+    const storageKey = getStorageKey(selectedProject, getWeekNumber(currentWeekStart));
+    const saved = localStorage.getItem(storageKey);
+  
     const { start, end } = getWeekRange(currentWeekStart);
-    const filtered = data[selectedProject]
+  
+    const allFromAPI = data[selectedProject]
       .filter((row) => {
         const startDate = excelDateToJSDate(row["Start Date"]);
         const endDate = excelDateToJSDate(row["End Date"]);
@@ -189,11 +202,65 @@ const AuftragssummenModul = ({ data, selectedProject }) => {
           (endDate >= start && endDate <= end) ||
           (startDate < start && endDate > end)
         );
-      })
+      });
+  
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        const restoredAreas = parsed.areas.map((a) => ({ ...a, ref: React.createRef() }));
+  
+        const gültigeIDs = allFromAPI.map((t) => t.ID);
+  
+        const gefilterteAreas = restoredAreas.map((area) => ({
+          ...area,
+          droppedTasks: area.droppedTasks.filter((t) => gültigeIDs.includes(t.ID))
+        }));
+  
+        const gefilterteRemaining = (parsed.remainingTasks || []).filter((t) =>
+          gültigeIDs.includes(t.ID)
+        );
+  
+        const neueTasks = allFromAPI.filter(
+          (t) =>
+            !gefilterteAreas.flatMap((a) => a.droppedTasks.map((t) => t.ID)).includes(t.ID) &&
+            !gefilterteRemaining.map((t) => t.ID).includes(t.ID)
+        );
+  
+        setAreas(gefilterteAreas);
+        setTasks([...gefilterteRemaining, ...neueTasks]);
+        return;
+      } catch (e) {
+        console.warn("Fehler beim Laden des gespeicherten Zustands:", e);
+      }
+    }
+  
+    const filtered = allFromAPI
       .sort((a, b) => excelDateToJSDate(a["Start Date"]) - excelDateToJSDate(b["Start Date"]));
+  
     setTasks(filtered);
     setAreas([createEmptyArea()]);
   }, [selectedProject, data, currentWeekStart]);
+  
+  
+  
+  useEffect(() => {
+    if (!selectedProject) return;
+  
+    const storageKey = getStorageKey(selectedProject, getWeekNumber(currentWeekStart));
+    const cleanAreas = areas.map(({ image, heading, droppedTasks }) => ({
+      image,
+      heading,
+      droppedTasks
+    }));
+  
+    const toSave = {
+      areas: cleanAreas,
+      remainingTasks: tasks
+    };
+  
+    localStorage.setItem(storageKey, JSON.stringify(toSave));
+  }, [areas, tasks, selectedProject, currentWeekStart]);
+  
 
   const handleHighlight = (id) => {
     setHighlightedId(id);
@@ -231,6 +298,29 @@ const AuftragssummenModul = ({ data, selectedProject }) => {
   const addArea = () => {
     setAreas((prev) => [...prev, createEmptyArea()]);
   };
+
+  const clearWeekData = () => {
+    if (!selectedProject) return;
+    const storageKey = getStorageKey(selectedProject, getWeekNumber(currentWeekStart));
+    localStorage.removeItem(storageKey);
+    // Neu laden:
+    const { start, end } = getWeekRange(currentWeekStart);
+    const filtered = data[selectedProject]
+      .filter((row) => {
+        const startDate = excelDateToJSDate(row["Start Date"]);
+        const endDate = excelDateToJSDate(row["End Date"]);
+        return (
+          (startDate >= start && startDate <= end) ||
+          (endDate >= start && endDate <= end) ||
+          (startDate < start && endDate > end)
+        );
+      })
+      .sort((a, b) => excelDateToJSDate(a["Start Date"]) - excelDateToJSDate(b["Start Date"]));
+  
+    setTasks(filtered);
+    setAreas([createEmptyArea()]);
+  };
+  
 
   const exportToPDF = async () => {
     const pdf = new jsPDF("landscape", "pt", "a3");
@@ -335,12 +425,60 @@ const AuftragssummenModul = ({ data, selectedProject }) => {
           </div>
 
           <div className="flex w-full">
-            <div className="w-[250px] p-4 overflow-y-auto max-h-[calc(100vh-100px)] pr-2 sticky top-[90px] h-fit bg-[#111]">
-              {tasks.length > 0 ? (
-                tasks.map((task) => <Ticket key={task.ID} task={task} onClick={handleHighlight} />)
-              ) : (
-                <p className="text-gray-400 text-sm">Keine Vorgänge gefunden.</p>
-              )}
+          <div className="w-[250px] p-4 overflow-y-auto max-h-[calc(100vh-100px)] pr-2 sticky top-[90px] h-fit bg-[#111]">
+  {/* 🔍 Suchfeld */}
+  <input
+    type="text"
+    placeholder="🔍 Prozess suchen"
+    value={searchText}
+    onChange={(e) => setSearchText(e.target.value)}
+    className="w-full mb-2 px-2 py-1 rounded text-sm bg-[#222] text-white border border-[#333]"
+  />
+
+  {/* 📂 Gewerk-Filter */}
+  <select
+    value={selectedTrade}
+    onChange={(e) => setSelectedTrade(e.target.value)}
+    className="w-full mb-2 px-2 py-1 rounded text-sm bg-[#222] text-white border border-[#333]"
+  >
+    <option value="">Alle Gewerke</option>
+    {Array.from(new Set(tasks.map(t => t["Trade"]))).sort().map((trade) => (
+      <option key={trade} value={trade}>{trade}</option>
+    ))}
+  </select>
+
+  {/* 🗂️ Bereich-Filter */}
+  <select
+    value={selectedZone}
+    onChange={(e) => setSelectedZone(e.target.value)}
+    className="w-full mb-4 px-2 py-1 rounded text-sm bg-[#222] text-white border border-[#333]"
+  >
+    <option value="">Alle Bereiche</option>
+    {Array.from(new Set(tasks.map(t => t["TaktZones"]))).sort().map((zone) => (
+      <option key={zone} value={zone}>{zone || "Kein Bereich"}</option>
+    ))}
+  </select>
+
+  {tasks.filter((task) => {
+  const matchesSearch = task.Process.toLowerCase().includes(searchText.toLowerCase());
+  const matchesTrade = selectedTrade === "" || task["Trade"] === selectedTrade;
+  const matchesZone = selectedZone === "" || task["TaktZones"] === selectedZone;
+  return matchesSearch && matchesTrade && matchesZone;
+}).length > 0 ? (
+  tasks
+    .filter((task) => {
+      const matchesSearch = task.Process.toLowerCase().includes(searchText.toLowerCase());
+      const matchesTrade = selectedTrade === "" || task["Trade"] === selectedTrade;
+      const matchesZone = selectedZone === "" || task["TaktZones"] === selectedZone;
+      return matchesSearch && matchesTrade && matchesZone;
+    })
+    .map((task) => (
+      <Ticket key={task.ID} task={task} onClick={handleHighlight} />
+    ))
+) : (
+  <p className="text-gray-400 text-sm">Keine Vorgänge gefunden.</p>
+)}
+
             </div>
             <div className="flex-1 p-4 flex flex-col gap-12">
               {areas.map((area, index) => (
@@ -422,6 +560,12 @@ const AuftragssummenModul = ({ data, selectedProject }) => {
                 >
                   <Download className="w-4 h-4" /> Export als PDF
                 </button>
+                <button
+    onClick={clearWeekData}
+    className="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600 flex items-center gap-2"
+  >
+    🧹 Zurücksetzen
+  </button>
               </div>
             </div>
           </div>

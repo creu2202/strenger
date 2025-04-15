@@ -156,6 +156,16 @@ const AuftragssummenModul = ({ data, selectedProject }) => {
   const [tasks, setTasks] = useState([]);
   const [highlightedId, setHighlightedId] = useState(null);
   const [areas, setAreas] = useState([createEmptyArea()]);
+  const [searchText, setSearchText] = useState("");
+const [selectedTrade, setSelectedTrade] = useState("");
+const [selectedZone, setSelectedZone] = useState("");
+const gefilterteTasks = tasks.filter((task) => {
+  const matchesSearch = task.Process.toLowerCase().includes(searchText.toLowerCase());
+  const matchesTrade = selectedTrade === "" || task["Trade"] === selectedTrade;
+  const matchesZone = selectedZone === "" || task["TaktZones"] === selectedZone;
+  return matchesSearch && matchesTrade && matchesZone;
+});
+
 
   const today = new Date();
   const getStartOfWeek = (date) => {
@@ -187,20 +197,9 @@ const AuftragssummenModul = ({ data, selectedProject }) => {
     const storageKey = getStorageKey(selectedProject, getWeekNumber(currentWeekStart));
     const saved = localStorage.getItem(storageKey);
   
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        const restoredAreas = parsed.areas.map((a) => ({ ...a, ref: React.createRef() }));
-        setAreas(restoredAreas);
-        setTasks(parsed.remainingTasks || []);
-        return;
-      } catch (e) {
-        console.warn("Fehler beim Laden des gespeicherten Zustands:", e);
-      }
-    }
-  
     const { start, end } = getWeekRange(currentWeekStart);
-    const filtered = data[selectedProject]
+  
+    const allFromAPI = data[selectedProject]
       .filter((row) => {
         const startDate = excelDateToJSDate(row["Start Date"]);
         const endDate = excelDateToJSDate(row["End Date"]);
@@ -209,12 +208,46 @@ const AuftragssummenModul = ({ data, selectedProject }) => {
           (endDate >= start && endDate <= end) ||
           (startDate < start && endDate > end)
         );
-      })
+      });
+  
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        const restoredAreas = parsed.areas.map((a) => ({ ...a, ref: React.createRef() }));
+  
+        const gültigeIDs = allFromAPI.map((t) => t.ID);
+  
+        const gefilterteAreas = restoredAreas.map((area) => ({
+          ...area,
+          droppedTasks: area.droppedTasks.filter((t) => gültigeIDs.includes(t.ID))
+        }));
+  
+        const gefilterteRemaining = (parsed.remainingTasks || []).filter((t) =>
+          gültigeIDs.includes(t.ID)
+        );
+  
+        const neueTasks = allFromAPI.filter(
+          (t) =>
+            !gefilterteAreas.flatMap((a) => a.droppedTasks.map((t) => t.ID)).includes(t.ID) &&
+            !gefilterteRemaining.map((t) => t.ID).includes(t.ID)
+        );
+  
+        setAreas(gefilterteAreas);
+        setTasks([...gefilterteRemaining, ...neueTasks]);
+        return;
+      } catch (e) {
+        console.warn("Fehler beim Laden des gespeicherten Zustands:", e);
+      }
+    }
+  
+    const filtered = allFromAPI
       .sort((a, b) => excelDateToJSDate(a["Start Date"]) - excelDateToJSDate(b["Start Date"]));
   
     setTasks(filtered);
     setAreas([createEmptyArea()]);
   }, [selectedProject, data, currentWeekStart]);
+  
+  
   
   useEffect(() => {
     if (!selectedProject) return;
@@ -398,13 +431,63 @@ const AuftragssummenModul = ({ data, selectedProject }) => {
           </div>
 
           <div className="flex w-full">
-            <div className="w-[250px] p-4 overflow-y-auto max-h-[calc(100vh-100px)] pr-2 sticky top-[90px] h-fit bg-[#111]">
-              {tasks.length > 0 ? (
-                tasks.map((task) => <Ticket key={task.ID} task={task} onClick={handleHighlight} />)
-              ) : (
-                <p className="text-gray-400 text-sm">Keine Vorgänge gefunden.</p>
-              )}
-            </div>
+          <div className="w-[250px] p-4 overflow-y-auto max-h-[calc(100vh-100px)] pr-2 sticky top-[90px] h-fit bg-[#111] border-r border-[#222]">
+  {/* Filter: Prozesssuche */}
+  <input
+    type="text"
+    placeholder="🔍 Prozess suchen"
+    value={searchText}
+    onChange={(e) => setSearchText(e.target.value)}
+    className="w-full mb-2 px-2 py-1 rounded text-sm bg-[#222] text-white border border-[#333] focus:ring-2 focus:ring-[#00e0d6] transition"
+  />
+
+  {/* Filter: Gewerk */}
+  <select
+    value={selectedTrade}
+    onChange={(e) => setSelectedTrade(e.target.value)}
+    className="w-full mb-2 px-2 py-1 rounded text-sm bg-[#222] text-white border border-[#333] focus:ring-2 focus:ring-[#00e0d6] transition"
+  >
+    <option value="">📂 Alle Gewerke</option>
+    {Array.from(new Set(tasks.map(t => t["Trade"]))).sort().map((trade) => (
+      <option key={trade} value={trade}>{trade}</option>
+    ))}
+  </select>
+
+  {/* Filter: Bereich */}
+  <select
+    value={selectedZone}
+    onChange={(e) => setSelectedZone(e.target.value)}
+    className="w-full mb-4 px-2 py-1 rounded text-sm bg-[#222] text-white border border-[#333] focus:ring-2 focus:ring-[#00e0d6] transition"
+  >
+    <option value="">🗂️ Alle Bereiche</option>
+    {Array.from(new Set(tasks.map(t => t["TaktZones"]))).sort().map((zone) => (
+      <option key={zone} value={zone}>{zone || "Kein Bereich"}</option>
+    ))}
+  </select>
+
+  {/* Reset-Button */}
+  {(searchText || selectedTrade || selectedZone) && (
+    <button
+      onClick={() => {
+        setSearchText("");
+        setSelectedTrade("");
+        setSelectedZone("");
+      }}
+      className="w-full mb-4 text-sm text-[#00e0d6] hover:text-[#00bfa5] transition underline"
+    >
+      🔄 Filter zurücksetzen
+    </button>
+  )}
+
+  {/* Gefilterte Vorgänge anzeigen */}
+  {gefilterteTasks.length > 0 ? (
+    gefilterteTasks.map((task) => (
+      <Ticket key={task.ID} task={task} onClick={handleHighlight} />
+    ))
+  ) : (
+    <p className="text-gray-400 text-sm">Keine Vorgänge gefunden.</p>
+  )}
+</div>
             <div className="flex-1 p-4 flex flex-col gap-12">
               {areas.map((area, index) => (
                 <div key={index} ref={area.ref} className="flex flex-col gap-2 border border-white p-4 rounded-xl bg-[#1a1a1a]">
