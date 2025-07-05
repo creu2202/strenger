@@ -97,7 +97,8 @@ const Dashboard = () => {
             />
           );
 
-        case "milestones": return <Meilensteine {...sharedProps} />;
+        case "milestones": 
+          return <Meilensteine {...sharedProps} gewerkFilter={selectedGewerke} />;
         case "projectGroupGantt": return <GruppenGanttModul {...sharedProps} gewerkFilter={selectedGewerke} selectedProjects={selectedProjects}
       />
         default: return null;

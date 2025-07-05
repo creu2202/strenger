@@ -13,7 +13,7 @@ const excelDateToJSDate = (serial) => {
   return new Date(utc_value * 1000);
 };
 
-const Meilensteine = ({ data, projects, selectedProjects }) => {
+const Meilensteine = ({ data, projects, selectedProjects, gewerkFilter }) => {
   if (!data) return <p className="text-gray-400 text-lg">Keine Daten verfügbar...</p>;
 
   const today = new Date();
@@ -52,6 +52,8 @@ const Meilensteine = ({ data, projects, selectedProjects }) => {
           } else if (progress === 0 && startDate >= today) {
             milestoneType = "upcoming";
           }
+          
+          if (gewerkFilter.length > 0 && !gewerkFilter.includes(row["Trade"])) return;
 
           const item = {
             projectId: projectMeta.projectId,
@@ -72,7 +74,7 @@ const Meilensteine = ({ data, projects, selectedProjects }) => {
       });
     });
     return list;
-  }, [data, projects, selectedProjects, filter]);
+  }, [data, projects, selectedProjects, filter, gewerkFilter]);
 
   const width = 900;
   const height = 250;
