@@ -139,8 +139,21 @@ const Meilensteine = ({ data, projects, selectedProjects, gewerkFilter }) => {
                 <g
                   key={`${d.project}-${d.id}`}
                   transform={`translate(${x}, ${y})`}
-                  onMouseEnter={(e) => showTooltip({ tooltipLeft: e.clientX + 10, tooltipTop: e.clientY - 30, tooltipData: d })}
-                  onMouseMove={(e) => showTooltip({ tooltipLeft: e.clientX + 10, tooltipTop: e.clientY - 30, tooltipData: d })}
+                  onMouseEnter={() =>
+                      showTooltip({
+                        tooltipLeft: margin.left + x,
+                        tooltipTop: margin.top + y - 10,
+                        tooltipData: d,
+                      })
+                    }
+                    onMouseMove={() =>
+                      showTooltip({
+                        tooltipLeft: margin.left + x,
+                        tooltipTop: margin.top + y - 10,
+                        tooltipData: d,
+                      })
+                    }
+
                   onMouseLeave={hideTooltip}
                 >
                   <polygon

@@ -1,10 +1,10 @@
-import React, { useEffect, useState } from "react";
-import { motion } from "framer-motion";
+import React, { useEffect, useState, useMemo } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import Select from "react-select";
 import * as XLSX from "xlsx";
 import Image from "next/image";
 import Logo from "./lcmd_logo_white.svg";
-import { FaChartBar, FaCalendarAlt, FaTasks, FaFlagCheckered, FaSitemap } from "react-icons/fa";
+import { FaChartBar, FaCalendarAlt, FaTasks, FaFlagCheckered, FaSitemap, FaSlidersH } from "react-icons/fa";
 import Fortschritt from "./Fortschritt";
 import GanttChart from "./GanttChart";
 import HeutigeAufgaben from "./HeutigeAufgaben";
@@ -13,22 +13,41 @@ import StrukturModul from "./StrukturModul";
 import AuftragssummenModul from "./AuftragssummenModul";
 import ProzessGruppierungModul from "./ProzessGruppierungModul";
 import GruppenGanttModul from "./GruppenGanttModul";
-
-
+import MultiProzesse from "./MultiProzesse";
 
 const PROJECT_TABS = {
   progress: { label: "Fortschritt", icon: FaChartBar },
   gantt: { label: "Gantt", icon: FaCalendarAlt },
   tasks: { label: "Tasks", icon: FaTasks },
   milestones: { label: "Milestones", icon: FaFlagCheckered },
-  projectGroupGantt: { label: "Auslastung", icon: FaCalendarAlt },
   struktur: { label: "Kosten", icon: FaSitemap },
   kosten: { label: "Flächenterminplan", icon: FaSitemap },
+  multiProzesse: { label: "Einkauf", icon: FaTasks },
+};
+
+// ---- Helper für "Responsibles" (gleich wie im Modul) ------------------------
+const RESPONSIBLE_KEYS = [
+  "Responsibles", "Responsible", "Verantwortlich", "Verantwortliche", "Verantwortliche(r)"
+];
+// robust: Array, "A, B", "A;B", "A/B", "A|B", Zeilenumbrüche
+const parseResponsibles = (val) => {
+  if (val == null && val !== 0) return [];
+  if (Array.isArray(val)) return val.map(String).map(s => s.trim()).filter(Boolean);
+  const s = String(val);
+  return s.split(/[\n,;\/|]+/g).map(t => t.trim()).filter(Boolean);
 };
 
 const PROJECTS = [
-  { name: "4254 - FGK - neu", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=69ec1f93-2994-4cc0-b0c2-c56919fbbe0d" },
-  { name: "4253 - KETEK", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=050b84f7-507e-45b3-bff7-1cf9b15d7af1" },
+  { name: "202119_Pfullingen", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=95932af3-ba35-47dd-b135-46e72b8b7265", projectId: "95932af3-ba35-47dd-b135-46e72b8b7265" },
+  { name: "Frickenhausen neu ", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=5a79ed65-48db-45f5-8b36-e3de06f53407", projectId: "5a79ed65-48db-45f5-8b36-e3de06f53407" },
+  { name: "202501 Reutlingen", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=e150ee2d-7349-4af9-8ab7-13b0fc884a67", projectId: "e150ee2d-7349-4af9-8ab7-13b0fc884a67" },
+  { name: "202402 – Kirchheim am Neckar", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=0dc7cfab-34b5-4ec3-9385-6e47a71e6998", projectId: "0dc7cfab-34b5-4ec3-9385-6e47a71e6998" },
+  { name: "21506_Ditzingen-Ob dem Korntaler Weg_REH + MFH (A+V bis Abnahme)", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=bf8871fa-3d62-47e2-bd88-c97f89c02c16", projectId: "bf8871fa-3d62-47e2-bd88-c97f89c02c16" },
+  { name: "Ladenburg III", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=0fdda559-64ac-4c20-8634-4545540918e9", projectId: "0fdda559-64ac-4c20-8634-4545540918e9" },
+  { name: "Gernsheim", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=9053e4dc-927d-4701-a1c2-4cc049fc6093", projectId: "9053e4dc-927d-4701-a1c2-4cc049fc6093" },
+  { name: "Hasloh II", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=0bc6d994-6503-44db-92dd-ba1c32dd9c00", projectId: "0bc6d994-6503-44db-92dd-ba1c32dd9c00" },
+  { name: "202502 Fuchshof, Ludwigsburg", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=91a04803-017e-4ce7-a805-fb6ab3019563", projectId: "91a04803-017e-4ce7-a805-fb6ab3019563" },
+  { name: "Emmering_neu", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=d95ba393-5e94-495d-8a7e-1ca19cf0b87d", projectId: "d95ba393-5e94-495d-8a7e-1ca19cf0b87d" },
 ];
 
 const TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI3N2U3OGMyMC0yNmVhLTQ3OWQtYjIzMS00MGRkNzIxYWZiNDEiLCJlbWFpbCI6ImNocmlzdGlhbi5yZXV0ZXJAbGNtZGlnaXRhbC5jb20iLCJ0cyI6NjQ4LCJsaWMiOnsiZWRpdCI6MX0sImlhdCI6MTc0MTE4MzQ5Mn0.a42tshg1OH8gzYu0AsEaeymx8ebWOdNA2rZzz9rdd1c";
@@ -53,14 +72,46 @@ const fetchData = async () => {
   return projectData;
 };
 
+const denseSelectStyles = {
+  control: (base) => ({
+    ...base,
+    minHeight: 32,
+    height: 32,
+    backgroundColor: "#1a1a1a",
+    borderColor: "#333",
+  }),
+  valueContainer: (base) => ({ ...base, padding: "0 6px" }),
+  input: (base) => ({ ...base, margin: 0, padding: 0 }),
+  indicatorsContainer: (base) => ({ ...base, height: 32 }),
+  dropdownIndicator: (base) => ({ ...base, padding: 6 }),
+  clearIndicator: (base) => ({ ...base, padding: 6 }),
+  multiValue: (base) => ({ ...base, backgroundColor: "#00e0d6", color: "black" }),
+  multiValueLabel: (base) => ({ ...base, color: "black", padding: "0 4px" }),
+  option: (base, state) => ({
+    ...base,
+    backgroundColor: state.isFocused ? "#00e0d6" : "#1a1a1a",
+    color: state.isFocused ? "black" : "white",
+    padding: 8,
+  }),
+  menu: (base) => ({ ...base, backgroundColor: "#1a1a1a", zIndex: 9999 }),
+  singleValue: (base) => ({ ...base, color: "white" }),
+  menuPortal: (base) => ({ ...base, zIndex: 9999 }),
+};
+
 const Dashboard = () => {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+
   const [mode, setMode] = useState("multi");
-  const [activeTab, setActiveTab] = useState("progress");
+  const [activeTab, setActiveTab] = useState("multiProzesse");
+
   const [selectedProjects, setSelectedProjects] = useState([]);
   const [selectedProject, setSelectedProject] = useState(PROJECTS[0]?.name || "");
   const [selectedGewerke, setSelectedGewerke] = useState([]);
+  const [selectedBereiche, setSelectedBereiche] = useState([]);
+  const [selectedResponsibles, setSelectedResponsibles] = useState([]);
+
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   useEffect(() => {
     fetchData().then((fetchedData) => {
@@ -69,38 +120,100 @@ const Dashboard = () => {
     });
   }, []);
 
-  const getAvailableTabs = mode === "multi"
-  ? ["progress", "gantt", "tasks", "milestones", "projectGroupGantt"]
-  : ["struktur", "kosten"];
+  const availableTabs = mode === "multi"
+    ? ["progress", "gantt", "tasks", "milestones", "multiProzesse"]
+    : ["struktur", "kosten"];
 
-  const alleGewerke = data
-  ? [...new Set(
-      Object.values(data)
-        .flatMap((prozesse) => prozesse.map((p) => p.Trade?.trim()))
-        .filter(Boolean)
-    )].sort()
-  : [];
+  const alleGewerke = useMemo(() => data
+    ? [...new Set(
+        Object.values(data)
+          .flatMap((prozesse) => prozesse.map((p) => p.Trade?.trim()))
+          .filter(Boolean)
+      )].sort()
+    : []
+  , [data]);
+
+  const alleBereiche = useMemo(() => data
+    ? [
+        ...new Set(
+          Object.values(data).flatMap((rows) =>
+            rows.flatMap((row) => {
+              const levels = Object.keys(row)
+                .filter((k) => k.startsWith("TaktZone Level"))
+                .map((k) => [parseInt(k.split(" ")[2], 10), row[k]])
+                .filter(([lvl, val]) => !isNaN(lvl) && val != null && String(val).trim() !== "")
+                .sort((a, b) => a[0] - b[0])
+                .map(([, v]) => String(v).trim());
+              const prefixes = [];
+              for (let i = 1; i <= levels.length; i++) {
+                const p = levels.slice(0, i).join(" / ");
+                if (p) prefixes.push(p);
+              }
+              if (prefixes.length === 0) {
+                const fallback = String(row["Bereich"] || row["Area"] || "").trim();
+                if (fallback) {
+                  const parts = fallback.split("/").map((s) => s.trim()).filter(Boolean);
+                  if (parts.length > 1) {
+                    const fbPrefixes = [];
+                    for (let i = 1; i <= parts.length; i++) {
+                      fbPrefixes.push(parts.slice(0, i).join(" / "));
+                    }
+                    return fbPrefixes;
+                  }
+                  return [fallback];
+                }
+              }
+              return prefixes;
+            })
+          )
+        ),
+      ].sort((a, b) => a.localeCompare(b, "de"))
+    : []
+  , [data]);
+
+  const alleResponsibles = useMemo(() => data
+    ? [
+        ...new Set(
+          Object.values(data)
+            .flatMap(rows =>
+              rows.flatMap(row =>
+                parseResponsibles(
+                  row.Responsibles ?? row.Responsible ?? row.Verantwortlich ?? row["Verantwortliche(r)"]
+                )
+              )
+            )
+            .map(r => r.trim())
+            .filter(Boolean)
+        ),
+      ].sort((a, b) => a.localeCompare(b, "de"))
+    : []
+  , [data]);
+
+  const activeFilterCount =
+    (mode === "multi" ? selectedProjects.length : (selectedProject ? 1 : 0)) +
+    selectedGewerke.length + selectedBereiche.length + selectedResponsibles.length;
 
   const renderModule = () => {
-    if (loading) return <p className="text-center text-gray-400">Lade Daten...</p>;
+    if (loading) return <p className="text-center text-gray-400 py-6">Lade Daten…</p>;
 
     if (mode === "multi") {
       const sharedProps = { data, projects: PROJECTS, selectedProjects };
       switch (activeTab) {
         case "progress": return <Fortschritt {...sharedProps} selectedBauleiterProjects={{}} />;
         case "gantt": return <GanttChart {...sharedProps} />;
-        case "tasks":
+        case "tasks": return <HeutigeAufgaben {...sharedProps} gewerkFilter={selectedGewerke} bereichFilter={selectedBereiche} />;
+        case "milestones": return <Meilensteine {...sharedProps} gewerkFilter={selectedGewerke} bereichFilter={selectedBereiche} />;
+        case "multiProzesse":
           return (
-            <HeutigeAufgaben
-              {...sharedProps}
+            <MultiProzesse
+              data={data}
+              projects={PROJECTS}
+              selectedProjects={selectedProjects}
               gewerkFilter={selectedGewerke}
+              bereichFilter={selectedBereiche}
+              responsiblesFilter={selectedResponsibles}
             />
           );
-
-        case "milestones": 
-          return <Meilensteine {...sharedProps} gewerkFilter={selectedGewerke} />;
-        case "projectGroupGantt": return <GruppenGanttModul {...sharedProps} gewerkFilter={selectedGewerke} selectedProjects={selectedProjects}
-      />
         default: return null;
       }
     } else {
@@ -115,146 +228,180 @@ const Dashboard = () => {
   };
 
   return (
-    <div className="bg-[#0d0d0d] text-white min-h-screen font-inter px-4 pt-4">
-      <div className="w-full">
-        <div className="flex justify-between items-center mb-4">
-          <motion.h1
-            className="text-4xl font-bold tracking-tight"
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 1 }}
-          >
-            Projekt-Dashboard
-          </motion.h1>
-          <Image src={Logo} alt="LCMD Logo" width={100} height={40} className="h-10 w-auto" />
-        </div>
-
-        <div className="flex gap-3 mb-4">
-          <button
-            onClick={() => {
-              setMode("multi");
-              setActiveTab("progress");
-            }}
-            className={`px-4 py-2 rounded font-medium ${mode === "multi" ? "bg-[#00e0d6] text-black" : "bg-[#333] text-white hover:bg-[#444]"}`}
-          >
-            🔀 Mehrere Projekte vergleichen
-          </button>
-          <button
-            onClick={() => {
-              setMode("single");
-              setActiveTab("struktur");
-            }}
-            className={`px-4 py-2 rounded font-medium ${mode === "single" ? "bg-[#00e0d6] text-black" : "bg-[#333] text-white hover:bg-[#444]"}`}
-          >
-            🔎 Ein Projekt analysieren
-          </button>
-        </div>
-
-        <div className="flex flex-wrap gap-2 mb-4">
-          {getAvailableTabs.map((tab) => {
-            const TabIcon = PROJECT_TABS[tab].icon;
-            return (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                className={`px-4 py-2 rounded text-sm font-medium flex items-center gap-2 transition-all duration-200 ${
-                  activeTab === tab ? "bg-[#00e0d6] text-black" : "bg-[#333] hover:bg-[#444]"
-                }`}
-              >
-                <TabIcon /> {PROJECT_TABS[tab].label}
-              </button>
-            );
-          })}
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-  <div>
-    <h2 className="text-sm font-semibold mb-2 text-gray-400">
-      {mode === "multi" ? "Projekte vergleichen:" : "Ein Projekt auswählen:"}
-    </h2>
-    {mode === "multi" ? (
-      <Select
-        isMulti
-        options={PROJECTS.map((p) => ({ label: p.name, value: p.name }))}
-        value={selectedProjects.map((name) => ({ label: name, value: name }))}
-        onChange={(selected) => setSelectedProjects(selected.map((s) => s.value))}
-        className="text-black z-50"
-        classNamePrefix="react-select"
-        placeholder="Projekte auswählen…"
-        styles={{
-          control: (base) => ({ ...base, backgroundColor: "#1a1a1a", borderColor: "#333", color: "white" }),
-          menu: (base) => ({ ...base, backgroundColor: "#1a1a1a", color: "white", zIndex: 9999 }),
-          option: (base, state) => ({
-            ...base,
-            backgroundColor: state.isFocused ? "#00e0d6" : "#1a1a1a",
-            color: state.isFocused ? "black" : "white",
-          }),
-          multiValue: (base) => ({ ...base, backgroundColor: "#00e0d6", color: "black" }),
-          multiValueLabel: (base) => ({ ...base, color: "black" }),
-          menuPortal: (base) => ({ ...base, zIndex: 9999 }),
-        }}
-        menuPortalTarget={typeof window !== "undefined" ? document.body : null}
-        menuPosition="fixed"
-      />
-    ) : (
-      <Select
-        options={PROJECTS.map((p) => ({ label: p.name, value: p.name }))}
-        value={{ label: selectedProject, value: selectedProject }}
-        onChange={(selected) => setSelectedProject(selected.value)}
-        className="text-black z-50"
-        classNamePrefix="react-select"
-        placeholder="Projekt auswählen…"
-        styles={{
-          control: (base) => ({ ...base, backgroundColor: "#1a1a1a", borderColor: "#333", color: "white" }),
-          menu: (base) => ({ ...base, backgroundColor: "#1a1a1a", color: "white", zIndex: 9999 }),
-          option: (base, state) => ({
-            ...base,
-            backgroundColor: state.isFocused ? "#00e0d6" : "#1a1a1a",
-            color: state.isFocused ? "black" : "white",
-          }),
-          singleValue: (base) => ({ ...base, color: "white" }),
-          menuPortal: (base) => ({ ...base, zIndex: 9999 }),
-        }}
-        menuPortalTarget={typeof window !== "undefined" ? document.body : null}
-        menuPosition="fixed"
-      />
-    )}
-  </div>
-
-  <div>
-  <h2 className="text-sm font-semibold mb-2 text-gray-400">Gewerke filtern:</h2>
-<Select
-  isMulti
-  options={alleGewerke.map((g) => ({ value: g, label: g }))}
-  value={selectedGewerke.map((g) => ({ value: g, label: g }))}
-  onChange={(selected) => setSelectedGewerke(selected.map((s) => s.value))}
-  isSearchable
-  className="text-black z-50"
-  classNamePrefix="react-select"
-  placeholder="Gewerke auswählen…"
-  styles={{
-    control: (base) => ({ ...base, backgroundColor: "#1a1a1a", borderColor: "#333", color: "white" }),
-    menu: (base) => ({ ...base, backgroundColor: "#1a1a1a", color: "white", zIndex: 9999 }),
-    option: (base, state) => ({
-      ...base,
-      backgroundColor: state.isFocused ? "#00e0d6" : "#1a1a1a",
-      color: state.isFocused ? "black" : "white",
-    }),
-    multiValue: (base) => ({ ...base, backgroundColor: "#00e0d6", color: "black" }),
-    multiValueLabel: (base) => ({ ...base, color: "black" }),
-    menuPortal: (base) => ({ ...base, zIndex: 9999 }),
-  }}
-  menuPortalTarget={typeof window !== "undefined" ? document.body : null}
-  menuPosition="fixed"
-/>
-
-  </div>
+    <div className="bg-[#0d0d0d] text-white min-h-screen font-inter">
+      {/* Sticky kompakte Top-Bar */}
+      <div className="sticky top-0 z-50 bg-[#0d0d0d]/95 backdrop-blur border-b border-white/10">
+        <div className="px-3 py-2 flex items-center gap-2">
+          {/* Brand */}
+          <div className="flex items-center gap-2 mr-2">
+            <div className="h-6 sm:h-7 flex items-center">
+  <Image src={Logo} alt="LCMD" className="h-full w-auto" priority />
 </div>
 
+            
+          </div>
 
+          {/* Mode-Switch (segmented) */}
+          <div className="flex rounded-lg overflow-hidden border border-white/15 text-sm">
+            <button
+              onClick={() => { setMode("multi"); setActiveTab("multiProzesse"); }}
+              className={`px-3 py-1.5 ${mode === "multi" ? "bg-[#00e0d6] text-black" : "bg-transparent text-white/80 hover:bg-white/10"}`}
+              title="Mehrere Projekte vergleichen"
+            >
+              Mehrere
+            </button>
+            <button
+              onClick={() => { setMode("single"); setActiveTab("struktur"); }}
+              className={`px-3 py-1.5 ${mode === "single" ? "bg-[#00e0d6] text-black" : "bg-transparent text-white/80 hover:bg-white/10"}`}
+              title="Ein Projekt analysieren"
+            >
+              Ein Projekt
+            </button>
+          </div>
 
+          {/* Tabs (kompakt, scrollbar) */}
+          <div className="flex-1 overflow-x-auto no-scrollbar">
+            <div className="flex gap-1 px-2">
+              {availableTabs.map((tab) => {
+                const TabIcon = PROJECT_TABS[tab].icon;
+                return (
+                  <button
+                    key={tab}
+                    onClick={() => setActiveTab(tab)}
+                    className={`px-3 py-1.5 rounded-md text-sm whitespace-nowrap flex items-center gap-2 transition-colors ${
+                      activeTab === tab ? "bg-[#00e0d6] text-black" : "bg-white/5 hover:bg-white/10 text-white"
+                    }`}
+                    title={PROJECT_TABS[tab].label}
+                  >
+                    <TabIcon /> <span className="hidden sm:inline">{PROJECT_TABS[tab].label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Filter Toggle */}
+          <button
+            onClick={() => setFiltersOpen((v) => !v)}
+            className="relative px-3 py-1.5 rounded-md bg-white/10 hover:bg-white/20 text-sm flex items-center gap-2"
+            title="Filter ein-/ausblenden"
+          >
+            <FaSlidersH />
+            <span className="hidden sm:inline">Filter</span>
+            {activeFilterCount > 0 && (
+              <span className="absolute -top-1 -right-1 text-[10px] bg-[#00e0d6] text-black rounded-full px-1.5 py-[2px] font-bold">
+                {activeFilterCount}
+              </span>
+            )}
+          </button>
+        </div>
+
+        {/* Collapsible Filterpanel */}
+        <AnimatePresence initial={false}>
+          {filtersOpen && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.25 }}
+              className="px-3 pb-3"
+            >
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                {/* Projekte */}
+                <div>
+                  <div className="text-xs font-semibold mb-1 text-gray-400">
+                    {mode === "multi" ? "Projekte vergleichen" : "Ein Projekt auswählen"}
+                  </div>
+                  {mode === "multi" ? (
+                    <Select
+                      isMulti
+                      options={PROJECTS.map((p) => ({ label: p.name, value: p.name }))}
+                      value={selectedProjects.map((name) => ({ label: name, value: name }))}
+                      onChange={(selected) => setSelectedProjects(selected.map((s) => s.value))}
+                      classNamePrefix="react-select"
+                      className="text-black z-50"
+                      styles={denseSelectStyles}
+                      placeholder="Projekte…"
+                      menuPortalTarget={typeof window !== "undefined" ? document.body : null}
+                      menuPosition="fixed"
+                    />
+                  ) : (
+                    <Select
+                      options={PROJECTS.map((p) => ({ label: p.name, value: p.name }))}
+                      value={{ label: selectedProject, value: selectedProject }}
+                      onChange={(selected) => setSelectedProject(selected.value)}
+                      classNamePrefix="react-select"
+                      className="text-black z-50"
+                      styles={denseSelectStyles}
+                      placeholder="Projekt…"
+                      menuPortalTarget={typeof window !== "undefined" ? document.body : null}
+                      menuPosition="fixed"
+                    />
+                  )}
+                </div>
+
+                {/* Gewerke */}
+                <div>
+                  <div className="text-xs font-semibold mb-1 text-gray-400">Gewerke filtern</div>
+                  <Select
+                    isMulti
+                    isSearchable
+                    options={alleGewerke.map((g) => ({ value: g, label: g }))}
+                    value={selectedGewerke.map((g) => ({ value: g, label: g }))}
+                    onChange={(selected) => setSelectedGewerke(selected.map((s) => s.value))}
+                    classNamePrefix="react-select"
+                    className="text-black z-50"
+                    styles={denseSelectStyles}
+                    placeholder="Gewerke…"
+                    menuPortalTarget={typeof window !== "undefined" ? document.body : null}
+                    menuPosition="fixed"
+                  />
+                </div>
+
+                {/* Bereiche */}
+                <div>
+                  <div className="text-xs font-semibold mb-1 text-gray-400">Bereiche filtern</div>
+                  <Select
+                    isMulti
+                    isSearchable
+                    options={alleBereiche.map((b) => ({ value: b, label: b }))}
+                    value={selectedBereiche.map((b) => ({ value: b, label: b }))}
+                    onChange={(selected) => setSelectedBereiche(selected.map((s) => s.value))}
+                    classNamePrefix="react-select"
+                    className="text-black z-50"
+                    styles={denseSelectStyles}
+                    placeholder="Bereiche…"
+                    menuPortalTarget={typeof window !== "undefined" ? document.body : null}
+                    menuPosition="fixed"
+                  />
+                </div>
+
+                {/* Verantwortliche */}
+                <div>
+                  <div className="text-xs font-semibold mb-1 text-gray-400">Verantwortliche filtern</div>
+                  <Select
+                    isMulti
+                    isSearchable
+                    options={alleResponsibles.map((r) => ({ value: r, label: r }))}
+                    value={selectedResponsibles.map((r) => ({ value: r, label: r }))}
+                    onChange={(selected) => setSelectedResponsibles(selected.map((s) => s.value))}
+                    classNamePrefix="react-select"
+                    className="text-black z-50"
+                    styles={denseSelectStyles}
+                    placeholder="Verantwortliche…"
+                    menuPortalTarget={typeof window !== "undefined" ? document.body : null}
+                    menuPosition="fixed"
+                  />
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+
+      {/* Content */}
+      <div className="px-3 pt-2">
         <div className="bg-[#1a1a1a] p-2 rounded-xl shadow w-full overflow-x-auto">
-
           {renderModule()}
         </div>
       </div>
