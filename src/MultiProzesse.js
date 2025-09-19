@@ -6,6 +6,7 @@ import { FaCalendarAlt, FaCheck } from "react-icons/fa";
 const NAME_KEYS = ["Process","ProcessName","Process Name","Vorgang","Task","Bezeichnung","Titel","Name"];
 const START_KEYS = ["Start Date","Start","StartDate","Starttermin","Anfang"];
 const END_KEYS   = ["End Date","End","EndDate","Endtermin","Finish"];
+const DURATION_KEYS = ["Duration", "Dauer", "Dauer [d]", "Duration (d)"];
 const TRADE_KEYS = ["Trade","Gewerk"];
 
 const COLOR_KEYS = ["Trade Background Color", "Trade BG Color", "Trade Color", "Gewerk Farbe"];
@@ -351,6 +352,22 @@ const eRaw = parseDate(pick(p, END_KEYS));
 let e = eRaw ? addDays(eRaw, -1) : null;
 if (s && e && e < s) e = s;
 
+// Dauer in Tagen ermitteln (bevor wir Enddatum -1 Tag anwenden)
+let durationDays = null;
+const durRaw = pick(p, DURATION_KEYS);
+if (durRaw != null && durRaw !== "") {
+  const dnum = Number(String(durRaw).replace(",", "."));
+  durationDays = isFinite(dnum) ? Math.max(0, Math.round(dnum)) : null;
+}
+if (durationDays == null) {
+  if (s && eRaw) {
+    // inklusiv: beide Tage zählen
+    durationDays = Math.max(0, diffDays(s, eRaw) + 1);
+  } else {
+    durationDays = 0;
+  }
+}
+
   const responsibles = parseResponsibles(pick(p, RESPONSIBLES_KEYS));
 
   // Filter / Fenster
@@ -379,6 +396,7 @@ if (s && e && e < s) e = s;
 
   map.get(key).items.push({
     name, trade, start: s, end: e, color, progress, done,
+    durationDays,
     responsibles                                     // <— NEU (für Tooltip etc.)
   });
 }
@@ -525,112 +543,594 @@ const packIntoLanes = (items, from, to, diffDaysFn) => {
  const scrollRef = useRef(null);
  const gridRef   = useRef(null);
 
-const handleExportPDF = async () => {
- const container = exportRef.current;   // #export-root (NEUES Capture-Ziel)
- const scroller  = scrollRef.current;
- const grid      = gridRef.current;
-  if (!container || !scroller || !grid) return;
+// --- NEU: Hilfen für SVG
+const svgNS = "http://www.w3.org/2000/svg";
 
-  try { if (document?.fonts?.ready) await document.fonts.ready; } catch {}
-  setIsExporting(true);
+function sx(el, attrs) {
+  for (const k in attrs) el.setAttribute(k, String(attrs[k]));
+  return el;
+}
+function tnode(text) { return document.createTextNode(text); }
 
-  const { jsPDF } = await import('jspdf');
-  const html2canvas = (await import('html2canvas')).default;
+// ===== Mehrzeiliger Text im SVG (tspan) =====
+function makeMeasureCtx(font = '600 16px -apple-system, Segoe UI, Roboto, Helvetica, Arial') {
+  const c = document.createElement('canvas');
+  const ctx = c.getContext('2d');
+  ctx.font = font;
+  return ctx;
+}
 
-  // komplette Inhaltsgröße des Grids
- const fullW = Math.max(grid.scrollWidth, grid.offsetWidth, grid.clientWidth);
- const fullH = Math.max(grid.scrollHeight, grid.offsetHeight, grid.clientHeight);
-
-// Container fürs Snapshot auf volle Größe „aufziehen“
-  const prevContainer = {
-    width:  container.style.width,
-    height: container.style.height,
-    overflow: container.style.overflow,
-  };
- container.style.width   = `${fullW}px`;
- container.style.height  = `${fullH}px`;
- container.style.overflow = 'visible';
-
-  // aktuelle Styles sichern & fürs Rendering „aufziehen“
-  const prevScroll = { left: scroller.scrollLeft, top: scroller.scrollTop };
-  const prevScroller = {
-    height:    scroller.style.height,
-    maxHeight: scroller.style.maxHeight,
-    overflow:  scroller.style.overflow,
-    width:     scroller.style.width,
-  };
-  scroller.style.height    = `${fullH}px`;
-  scroller.style.maxHeight = 'none';
-  scroller.style.overflow  = 'visible';
-  scroller.style.width     = `${fullW}px`;
-  scroller.scrollLeft = 0;
-  scroller.scrollTop  = 0;
-
-
-  container.classList.add('exporting'); // Sticky aus
-  grid.classList.add('exporting');       // ← SCHRITT 1: HIER hinzufügen!
-await new Promise(requestAnimationFrame);
-  const canvas = await html2canvas(container, {
-    // Browser rendert das DOM 1:1 → keine Baseline-Differenzen
-    foreignObjectRendering: true,
-    // Auflösung: nimm die des Geräts, keine "künstliche" 2x-Skalierung
-    scale: Math.max(2, (window.devicePixelRatio || 1) * 2),
-    backgroundColor: '#ffffff',
-    useCORS: true,
-    logging: false,
-    width: fullW,
-    height: fullH,
-    windowWidth: fullW,
-    windowHeight: fullH,
-    scrollX: 0,
-    scrollY: 0,
-    onclone: (doc) => {
-     // im Klon auch Sticky neutralisieren
-     doc.querySelector('#export-root')?.classList.add('exporting');
+function wrapLines(text, maxWidth, measureCtx) {
+  const words = String(text || '').split(/\s+/);
+  const lines = [];
+  let line = '';
+  for (const w of words) {
+    const t = line ? line + ' ' + w : w;
+    if (measureCtx.measureText(t).width <= maxWidth) {
+      line = t;
+    } else {
+      if (line) lines.push(line);
+      // sehr lange Tokens hart umbrechen
+      if (measureCtx.measureText(w).width > maxWidth) {
+        let buf = '';
+        for (const ch of w) {
+          if (measureCtx.measureText(buf + ch).width <= maxWidth) buf += ch;
+          else { lines.push(buf); buf = ch; }
+        }
+        line = buf;
+      } else {
+        line = w;
+      }
     }
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+
+/**
+ * Zeichnet mehrzeiligen SVG-Text mit <tspan>.
+ * @returns {number} tatsächlich genutzte Höhe (in px)
+ */
+function drawWrappedSvgText({
+  parent,         // SVG-Node (z.B. <svg> oder <g>)
+  text,           // String
+  x, y,           // linke Baseline der ersten Zeile
+  maxWidth,       // verfügbare Breite
+  lineHeight,     // Zeilenhöhe in px
+  maxHeight,      // maximal nutzbare Höhe
+  className,      // CSS-Klasse(n) fürs <text>
+  fontForMeasure, // Canvas-Font zum Messen (z.B. '600 16px ...')
+  fill,                // NEW
+  fontSize,            // NEW (number or string)
+  fontWeight,          // NEW
+  fontFamily,          // NEW
+}) {
+  const ctx = makeMeasureCtx(fontForMeasure);
+  const lines = wrapLines(text, maxWidth, ctx);
+
+  const maxLines = Math.max(1, Math.floor(maxHeight / lineHeight));
+  const used = Math.min(lines.length, maxLines);
+
+  const el = document.createElementNS(svgNS, 'text');
+  if (className) el.setAttribute('class', className);
+
+  for (let i = 0; i < used; i++) {
+    const tspan = document.createElementNS(svgNS, 'tspan');
+    tspan.setAttribute('x', String(x));
+    tspan.setAttribute('y', String(y + i * lineHeight));
+    tspan.appendChild(document.createTextNode(lines[i]));
+    el.appendChild(tspan);
+  }
+
+  parent.appendChild(el);
+  return used * lineHeight;
+}
+// --- PDF-Baseline-Help ------------------------------------------------------
+const BASELINE_K = 0.32; // optische Mitte ≈ Mitte + 0.32*fontSize
+const midY = (top, h, fs) => top + h/2 + fs*BASELINE_K; // Baseline für "zentriert"
+
+
+async function handleExportPDF() {
+  // Maße aus deiner Ansicht übernehmen
+  const LEFT_W = 340;                       // linke Spalte (wie im Grid)
+  const DW     = dayWidth;                  // px pro Tag
+  const totalW = LEFT_W + timelineWidth;    // Gesamtbreite
+  const PADDING = 16;
+
+  // --- Komplette Höhe berechnen (wie im Render)
+  const ROW_PAD = 8;
+  const BAR_H   = 28;
+  const V_GAP   = 6;
+  const LABEL_TITLE_LH = 20;
+  const LABEL_SUB_LH   = 16;
+  const LABEL_MIN_H    = ROW_PAD * 2 + LABEL_TITLE_LH + LABEL_SUB_LH; // 52
+  const MONTH_H = 28, KW_H = 18, GAP_H = 6;
+  const headerH = MONTH_H + KW_H + GAP_H;
+
+  // Heute-Offset
+  const today = startOfDay(new Date());
+  const todayOffset = Math.min(Math.max(0, diffDays(from, today) * DW + DW / 2), timelineWidth);
+
+  // Row-Heights vorbereiten (identisch wie in deinem Render)
+  const rowLayouts = groups.map(g => {
+    const { packed, laneCount } = packIntoLanes(g.items, from, to, diffDays);
+
+    // Meilenstein-Lanes (wie oben im Code)
+    const MS = 14, PAD = 6, LABEL_H = 22, LABEL_W = Math.max(120, DW * 4), LABEL_W_MIN = 60, LABEL_X_GAP = 4;
+
+    const msItems = packed
+      .map((it, i) => ({ it, i }))
+      .filter(({ it }) => (it.durationDays || 0) === 0)
+      .sort((a, b) => diffDays(from, a.it._sC) - diffDays(from, b.it._sC));
+
+    const msLayout = new Map();
+    const msLaneEnds = [];
+    msItems.forEach(({ it, i }) => {
+      const cx   = diffDays(from, it._sC) * DW + DW / 2;
+      const left = cx + MS/2 + PAD;
+      const width = Math.max(LABEL_W_MIN, Math.min(LABEL_W, timelineWidth - left));
+      const endX = left + width;
+
+      let lane = 0;
+      while (lane < msLaneEnds.length && left < msLaneEnds[lane] + LABEL_X_GAP) lane++;
+      if (lane === msLaneEnds.length) msLaneEnds.push(endX); else msLaneEnds[lane] = endX;
+
+      msLayout.set(i, { lane, left, width, cx });
+    });
+    const msLaneCount = msLaneEnds.length;
+    const msBlockH = msLaneCount ? msLaneCount * LABEL_H + (msLaneCount - 1) * V_GAP : 0;
+
+    const barsHeight = ROW_PAD * 2 + laneCount * BAR_H + Math.max(0, laneCount - 1) * V_GAP;
+    const rowHeight  = Math.max(barsHeight + msBlockH, LABEL_MIN_H);
+
+    return { g, packed, laneCount, rowHeight, msLayout, msLaneCount, msBlockH };
   });
-  // Styles zurück
- container.style.width   = prevContainer.width   || '';
- container.style.height  = prevContainer.height  || '';
- container.style.overflow= prevContainer.overflow|| '';
-  scroller.style.height    = prevScroller.height    || '';
-  scroller.style.maxHeight = prevScroller.maxHeight || '';
-  scroller.style.overflow  = prevScroller.overflow  || '';
-  scroller.style.width     = prevScroller.width     || '';
- scroller.scrollLeft = prevScroll.left;
- scroller.scrollTop  = prevScroll.top;
-  container.classList.remove('exporting');
-  grid.classList.remove('exporting');  
-  // Sicherheitscheck: wenn der Canvas leer ist → Abbruch
-  if (!canvas || canvas.width < 10 || canvas.height < 10) {
-    console.error('Canvas leer/zu klein:', canvas?.width, canvas?.height);
-    setIsExporting(false);
-    return;
+
+  const bodyH = rowLayouts.reduce((sum, r) => sum + r.rowHeight, 0);
+  const totalH = headerH + bodyH;
+
+  // --- SVG aufbauen (DOM, nicht als String; zuverlässiger)
+  const svg = sx(document.createElementNS(svgNS, "svg"), {
+    xmlns: svgNS,
+    width: totalW,
+    height: totalH,
+    viewBox: `0 0 ${totalW} ${totalH}`,
+  });
+
+  // Hintergrund
+  svg.appendChild(sx(document.createElementNS(svgNS, "rect"), {
+    x: 0, y: 0, width: totalW, height: totalH, fill: "#ffffff"
+  }));
+
+  // Fonts + Defaults
+  const defs = document.createElementNS(svgNS, "defs");
+  const style = document.createElementNS(svgNS, "style");
+  style.appendChild(tnode(`
+    text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji","Segoe UI Symbol"; }
+    .small { font-size: 11px; fill: #475569; }
+    .tiny  { font-size: 10px; fill: #475569; }
+    .label-strong { font-weight: 600; fill: #0f172a; }
+    .label-sub    { fill: #64748b; }
+  `));
+  defs.appendChild(style);
+  svg.appendChild(defs);
+
+  // --- Header (rechts) ---
+  const headerG = sx(document.createElementNS(svgNS, "g"), { transform: `translate(${LEFT_W},0)` });
+  svg.appendChild(headerG);
+
+  // Monats-Bänder
+  months.forEach((m, i) => {
+    headerG.appendChild(sx(document.createElementNS(svgNS, "rect"), {
+      x: m.startIdx * DW,
+      y: 0,
+      width: m.span * DW,
+      height: headerH,
+      fill: i % 2 === 0 ? "rgba(148,163,184,0.06)" : "rgba(148,163,184,0.03)"
+    }));
+  });
+
+  // Tagesraster + Montags-Linien
+  days.forEach((d, i) => {
+    // Raster
+    headerG.appendChild(sx(document.createElementNS(svgNS, "line"), {
+      x1: i * DW, y1: 0, x2: i * DW, y2: headerH, stroke: "#e5e7eb", "stroke-width": 1
+    }));
+  });
+  weeks.forEach(w => {
+    headerG.appendChild(sx(document.createElementNS(svgNS, "line"), {
+      x1: w.idx * DW, y1: 0, x2: w.idx * DW, y2: headerH, stroke: "#cbd5e1", "stroke-width": 2
+    }));
+  });
+
+  // Monats-Trenner
+  monthBoundaries.forEach(idx => {
+    headerG.appendChild(sx(document.createElementNS(svgNS, "line"), {
+      x1: idx * DW, y1: 0, x2: idx * DW, y2: headerH, stroke: "#94a3b8", "stroke-width": 3
+    }));
+  });
+
+  // Heute-Linie
+  headerG.appendChild(sx(document.createElementNS(svgNS, "line"), {
+    x1: todayOffset, y1: 0, x2: todayOffset, y2: headerH, stroke: "#ff5a5f", "stroke-width": 2
+  }));
+
+// --- Monatslabels (Pill nur so breit wie der Text) ---
+const MONTH_LABEL_FONT = '700 12px -apple-system, Segoe UI, Roboto, Helvetica, Arial';
+const monthMeasure = makeMeasureCtx(MONTH_LABEL_FONT);
+
+months.forEach((m) => {
+  const left   = m.startIdx * DW + 6;        // wie in der Webansicht
+  const top    = 4;
+  const pillH  = MONTH_H - 8;                // identisch zur Web-Höhe
+  const text   = m.label;
+  const textW  = monthMeasure.measureText(text).width;
+
+  // Breite der Pill: Text + horizontales Padding (10px links/rechts)
+  // und Sicherheit, damit die Pill den Monat nicht „verlässt“:
+  const pillW  = Math.min(Math.max(80, textW + 20), m.span * DW - 12);
+
+  const g = sx(document.createElementNS(svgNS, "g"), {
+    transform: `translate(${left}, ${top})`
+  });
+
+  // Hintergrund der Pill
+ const monthR = Math.max(1, Math.min(pillH / 2 - 0.01, pillW / 2 - 0.01));
+ g.appendChild(sx(document.createElementNS(svgNS, "rect"), {
+   x: 0, y: 0, rx: monthR, ry: monthR, width: pillW, height: pillH,
+    fill: "rgba(148,163,184,0.18)",
+    stroke: "rgba(148,163,184,0.35)",
+    "stroke-width": 1
+  }));
+
+  // Text (inline styles → zuverlässige Farben im PDF)
+ const t = sx(document.createElementNS(svgNS, "text"), {
+   x: 10, y: midY(0, pillH, 12),
+    "font-size": "12",
+    "font-weight": "700",
+    "font-family": '-apple-system, Segoe UI, Roboto, Helvetica, Arial',
+    fill: "#0f172a"
+  });
+  t.appendChild(tnode(text));
+  g.appendChild(t);
+
+  headerG.appendChild(g);
+});
+
+
+  // KW-Chips
+  weeks.forEach((w) => {
+    const ws = days[w.idx];
+    const we = endOfISOWeek(ws);
+    const left = w.idx * DW + 4;
+    const chipW = DW * 7 - 8;
+
+    const g = sx(document.createElementNS(svgNS, "g"), { transform: `translate(${left}, ${MONTH_H + GAP_H})` });
+    g.appendChild(sx(document.createElementNS(svgNS, "rect"), {
+      x: 0, y: 0, rx: 8, ry: 8, width: chipW, height: KW_H,
+      fill: "rgba(255,255,255,0.7)", stroke: "rgba(100,116,139,0.25)", "stroke-width": 1
+    }));
+ const badgeR = Math.max(1, Math.min((KW_H - 6) / 2 - 0.01, 44 / 2 - 0.01));
+ const badge = sx(document.createElementNS(svgNS, "rect"), {
+   x: 6, y: 3, rx: badgeR, ry: badgeR, width: 44, height: KW_H - 6,
+      fill: "rgba(241,245,249,0.9)", stroke: "rgba(100,116,139,0.35)", "stroke-width": 1
+    });
+    g.appendChild(badge);
+
+// "KW 37" Badge-Text
+const t1 = sx(document.createElementNS(svgNS, "text"), {
+  x: 6 + 22,
+  y: KW_H / 2,
+  "text-anchor": "middle",
+  "dominant-baseline": "middle",
+  "font-size": "11",
+  "font-weight": "700",
+  "font-family": '-apple-system, Segoe UI, Roboto, Helvetica, Arial',
+  fill: "#0f172a"
+});
+t1.appendChild(tnode(`KW ${w.no}`));
+g.appendChild(t1);
+
+// Datumsbereich
+const t2 = sx(document.createElementNS(svgNS, "text"), {
+  x: 6 + 22 + 10 + 44,
+  y: KW_H / 2,
+  "dominant-baseline": "middle",
+  "font-size": "11",
+  "font-weight": "400",
+  "font-family": '-apple-system, Segoe UI, Roboto, Helvetica, Arial',
+  fill: "#475569"
+});
+t2.appendChild(tnode(`${fmtDM(ws)} – ${fmtDM(we)}`));
+g.appendChild(t2);
+
+
+    headerG.appendChild(g);
+  });
+
+  // --- Körper/Rows ---
+  let yCursor = headerH;
+
+  // linke Spalten-Hintergründe + Trenner
+  groups.forEach((_, idx) => {
+    const rh = rowLayouts[idx].rowHeight;
+    // links (abwechselnd)
+    svg.appendChild(sx(document.createElementNS(svgNS, "rect"), {
+      x: 0, y: yCursor, width: LEFT_W, height: rh,
+      fill: idx % 2 ? "#f8fafc" : "#ffffff"
+    }));
+    // vertikale Trennlinie links|rechts
+    svg.appendChild(sx(document.createElementNS(svgNS, "line"), {
+      x1: LEFT_W, y1: yCursor, x2: LEFT_W, y2: yCursor + rh, stroke: "#e5e7eb", "stroke-width": 1
+    }));
+    // untere Linie gesamt
+    svg.appendChild(sx(document.createElementNS(svgNS, "line"), {
+      x1: 0, y1: yCursor + rh, x2: totalW, y2: yCursor + rh, stroke: "#e5e7eb", "stroke-width": 1
+    }));
+    yCursor += rh;
+  });
+
+  // linke Labels & rechte Timeline-Inhalte
+  yCursor = headerH;
+
+  for (let rowIdx = 0; rowIdx < rowLayouts.length; rowIdx++) {
+    const { g, packed, rowHeight, msLayout, msLaneCount, msBlockH, laneCount } = rowLayouts[rowIdx];
+
+// Linke Spalte: Projekt (mehrzeilig) + Bereich (mehrzeilig)
+{
+  const leftPad   = 16;                          // Innenabstand links
+  const rightPad  = 16;                          // etwas Luft zur Trennlinie
+  const availW    = Math.max(0, LEFT_W - leftPad - rightPad);
+  const maxH      = rowHeight - ROW_PAD * 2;     // nutzbare Höhe in der Zelle
+
+  // Titel (Projekt)
+  const titleFontMeasure = '600 16px -apple-system, Segoe UI, Roboto, Helvetica, Arial';
+  const titleLH = 20; // px
+  const usedH1 = drawWrappedSvgText({
+    parent: svg,
+    text: g.project,
+    x: leftPad,
+    y: yCursor + ROW_PAD + titleLH,             // Baseline 1. Zeile
+    maxWidth: availW,
+    lineHeight: titleLH,
+    maxHeight: maxH,
+    className: 'label-strong',
+    fontForMeasure: titleFontMeasure,
+  });
+
+  // Sub (Bereichspfad) – bekommt den restlichen Platz
+  const subFontMeasure = '400 13px -apple-system, Segoe UI, Roboto, Helvetica, Arial';
+  const subLH = 16; // px
+  const remainingH = Math.max(0, maxH - usedH1 - 4);
+
+  if (remainingH > 0) {
+    drawWrappedSvgText({
+      parent: svg,
+      text: g.area,
+      x: leftPad,
+      y: yCursor + ROW_PAD + usedH1 + 4 + subLH,
+      maxWidth: availW,
+      lineHeight: subLH,
+      maxHeight: remainingH,
+      className: 'small label-sub',
+      fontForMeasure: subFontMeasure,
+    });
+  }
+}
+
+
+    // Rechte Timeline-Zelle
+    const rightG = sx(document.createElementNS(svgNS, "g"), { transform: `translate(${LEFT_W}, ${yCursor})` });
+    svg.appendChild(rightG);
+
+    // Wochenbänder in der Zeile
+    weekBands.forEach(b => {
+      rightG.appendChild(sx(document.createElementNS(svgNS, "rect"), {
+        x: b.startIdx * DW, y: 0, width: b.span * DW, height: rowHeight,
+        fill: b.even ? "#f8fafc" : "#ffffff"
+      }));
+    });
+
+    // Tagesraster
+    days.forEach((d, i) => {
+      rightG.appendChild(sx(document.createElementNS(svgNS, "line"), {
+        x1: i*DW, y1: 0, x2: i*DW, y2: rowHeight, stroke: "#e5e7eb", "stroke-width": 1
+      }));
+    });
+
+    // Heute-Linie
+    rightG.appendChild(sx(document.createElementNS(svgNS, "line"), {
+      x1: todayOffset, y1: 0, x2: todayOffset, y2: rowHeight, stroke: "#ff5a5f", "stroke-width": 2
+    }));
+
+    // Monats-Trenner (dicker)
+    monthBoundaries.forEach(idx => {
+      rightG.appendChild(sx(document.createElementNS(svgNS, "line"), {
+        x1: idx*DW, y1: 0, x2: idx*DW, y2: rowHeight, stroke: "#94a3b8", "stroke-width": 3
+      }));
+    });
+
+    // Elemente (Milestones & Balken)
+    const BAR_H2 = 28, V_GAP2 = 6;
+
+    packed.forEach((it, i) => {
+      const isMilestone = (it.durationDays || 0) === 0;
+
+      if (isMilestone) {
+        const lay = msLayout.get(i);
+        const MS = 14, LABEL_H = 22;
+        const laneTop = ROW_PAD + (lay ? lay.lane : 0) * (LABEL_H + V_GAP2);
+
+        // Diamant
+        const cx = lay?.cx ?? (diffDays(from, it._sC) * DW + DW/2);
+        const d = `M ${cx} ${laneTop + (LABEL_H/2) - MS/2}
+                   l ${MS/2} ${MS/2} l ${-MS/2} ${MS/2}
+                   l ${-MS/2} ${-MS/2} Z`;
+        const diamond = sx(document.createElementNS(svgNS, "path"), {
+          d, fill: it.color, stroke: "rgba(0,0,0,0.10)", "stroke-width": 1
+        });
+        rightG.appendChild(diamond);
+
+        // Pill-Label (immer rechts)
+        const pillLeft = (lay ? lay.left : (cx + MS/2 + 6));
+        const pillW    = (lay ? lay.width : Math.max(60, Math.min(Math.max(120, DW*4), timelineWidth - pillLeft)));
+        const parsed   = parseAnyColor(it.color);
+        const pillBg  = parsed ? `rgba(${parsed.r},${parsed.g},${parsed.b},0.12)` : "rgba(0,0,0,0.06)";
+        const pillBor = parsed ? `rgba(${parsed.r},${parsed.g},${parsed.b},0.35)` : "rgba(0,0,0,0.1)";
+
+
+ const msR = Math.max(1, Math.min(LABEL_H / 2 - 0.01, pillW / 2 - 0.01));
+ rightG.appendChild(sx(document.createElementNS(svgNS, "rect"), {
+   x: pillLeft, y: laneTop, rx: msR, ry: msR, width: pillW, height: LABEL_H,
+          fill: pillBg, stroke: pillBor, "stroke-width": 1
+        }));
+        const t = sx(document.createElementNS(svgNS, "text"), {
+          x: pillLeft + 10, y: laneTop + LABEL_H/2, "dominant-baseline":"middle"
+        });
+        t.setAttribute("class","small label-strong");
+        t.appendChild(tnode(it.name));
+        rightG.appendChild(t);
+        return;
+      }
+
+      // Balken
+      const left  = Math.max(0, diffDays(from, it._sC)) * DW + 3;
+      const width = Math.max(6, (diffDays(it._sC, it._eC)+1)*DW - 6);
+      const top   = ROW_PAD + msBlockH + it._lane * (BAR_H2 + V_GAP2);
+
+      rightG.appendChild(sx(document.createElementNS(svgNS, "rect"), {
+        x: left, y: top, rx: 6, ry: 6, width, height: BAR_H2,
+        fill: it.color, stroke:"rgba(0,0,0,0.06)", "stroke-width":1
+      }));
+
+// Label (Platz für Avatar/Häkchen lassen)
+const hasResp = Array.isArray(it.responsibles) && it.responsibles.length > 0;
+const AVATAR = 20, BADGE = 18, GAP = 6;
+const reserve = (hasResp ? AVATAR + GAP : 0) + (it.done ? BADGE + GAP : 0);
+
+// --- Clip NICHT mehr am <text>, sondern an einem <g> ---
+const clipId = `clip-${rowIdx}-${i}`;
+const clip = document.createElementNS(svgNS, "clipPath");
+clip.setAttribute("id", clipId);
+const clipRect = sx(document.createElementNS(svgNS, "rect"), {
+  x: left + 8,
+  y: top + 4,
+  width: Math.max(0, width - reserve - 16),
+  height: BAR_H2 - 8
+});
+clip.appendChild(clipRect);
+defs.appendChild(clip);
+
+// Gruppe mit clip-path
+const gClip = document.createElementNS(svgNS, "g");
+gClip.setAttribute("clip-path", `url(#${clipId})`);
+rightG.appendChild(gClip);
+
+// Text mit *inline* Stil (kein className)
+const txt = sx(document.createElementNS(svgNS, "text"), {
+  x: left + 8,
+  y: top + BAR_H2 / 2,
+  "dominant-baseline": "middle"
+});
+
+// **WICHTIG: alles inline setzen**
+txt.setAttribute("fill", textColorForBg(it.color));          // Farbe aus Kontrastfunktion
+txt.setAttribute("font-size", "12");
+txt.setAttribute("font-weight", "600");
+txt.setAttribute("font-family",
+  '-apple-system, Segoe UI, Roboto, Helvetica, Arial'
+);
+
+txt.appendChild(tnode(it.name));
+gClip.appendChild(txt);
+
+
+      // Avatar-Kreis mit Initialen
+      if (hasResp) {
+        const initials = initialsFromString(it.responsibles[0]);
+        const cx = left + width - (it.done ? (GAP + BADGE + GAP) : GAP) - AVATAR/2;
+        const cy = top + BAR_H2/2;
+
+        rightG.appendChild(sx(document.createElementNS(svgNS, "circle"), {
+          cx, cy, r: AVATAR/2, fill: "rgba(255,255,255,0.92)", stroke: "rgba(0,0,0,0.08)", "stroke-width":1
+        }));
+        const itxt = sx(document.createElementNS(svgNS, "text"), { x: cx, y: cy, "text-anchor":"middle", "dominant-baseline":"middle" });
+        itxt.setAttribute("class","tiny label-strong");
+        itxt.appendChild(tnode(initials));
+        rightG.appendChild(itxt);
+      }
+
+      // Check-Badge (bei done)
+      if (it.done) {
+        const r = BADGE/2;
+        const cx = left + width - GAP - r;
+        const cy = top + BAR_H2/2;
+        rightG.appendChild(sx(document.createElementNS(svgNS, "circle"), {
+          cx, cy, r, fill: "rgba(255,255,255,0.85)", stroke:"rgba(0,0,0,0.04)", "stroke-width":1
+        }));
+        // minimalistisches Häkchen (Vektor)
+        const path = sx(document.createElementNS(svgNS, "path"), {
+          d: `M ${cx-r/2} ${cy} l ${r/3} ${r/3} l ${r/1.5} ${-r/1.5}`,
+          stroke: parseAnyColor(it.color) ? it.color : "#16a34a",
+          "stroke-width": 2, fill: "none", "stroke-linecap":"round", "stroke-linejoin":"round"
+        });
+        rightG.appendChild(path);
+      }
+    });
+
+    yCursor += rowHeight;
   }
 
-  // --- Canvas → PDF (VERTIKAL kacheln; das ist am stabilsten) ---
-  const pdf        = new jsPDF('l', 'pt', 'a4');
-  const pageWidth  = pdf.internal.pageSize.getWidth();
-  const pageHeight = pdf.internal.pageSize.getHeight();
+// --- SVG → PDF (Vektor) ---
+const { jsPDF } = await import('jspdf');
 
-  const margin   = 16;
-  const drawW    = pageWidth - margin * 2;                 // wir füllen die Breite
-  const drawH    = (canvas.height * drawW) / canvas.width; // resultierende Höhe
+// svg2pdf robust auflösen
+const mod = await import('svg2pdf.js');
+const svg2pdfFn =
+  (typeof mod === 'function' && mod) ||
+  (mod && typeof mod.default === 'function' && mod.default) ||
+  (mod && typeof mod.svg2pdf === 'function' && mod.svg2pdf) ||
+  (typeof window !== 'undefined' && typeof window.svg2pdf === 'function' && window.svg2pdf);
 
-  const imgData  = canvas.toDataURL('image/png');
+if (!svg2pdfFn) throw new Error('svg2pdf not found');
 
-  // So viele Seiten, wie nötig (vertikal)
-  let y = 0;
-  while (y < drawH) {
-    pdf.addImage(imgData, 'PNG',  margin, margin - y, drawW, drawH);
-    y += (pageHeight - margin * 2);
-    if (y < drawH) pdf.addPage();
-  }
+// === Portrait, eine lange Seite, volle Breite ===
 
-  const todayStr = new Date().toISOString().slice(0,10);
-  pdf.save(`MultiProzesse_${todayStr}.pdf`);
-  setIsExporting(false);
-};
+// Zielbreite: A4 Portrait in Punkten (jsPDF nutzt pt). A4 Breite ≈ 595.28 pt
+const PW = 595.28;                // Page Width (A4 portrait)
+const M  = 16;                    // Rand
+// Nur nach Breite skalieren:
+const scale = (PW - 2 * M) / totalW;
+
+// Benötigte Seitenhöhe dynamisch aus SVG-Gesamthöhe:
+let PH = 2 * M + totalH * scale;  // Page Height (variabel)
+// jsPDF hat in manchen Viewern ein sehr großes Seitenlimit (~14400pt)
+const MAX_PT = 14400;
+if (PH > MAX_PT) PH = MAX_PT;     // optionaler Schutz – sonst wird’s >200″ sehr lang
+
+// PDF jetzt mit **custom Format** (Breite fix, Höhe dynamisch) anlegen:
+const pdf = new jsPDF({
+  orientation: 'portrait',
+  unit: 'pt',
+  format: [PW, PH],
+});
+
+// Zeichnen: x=M, y=M; Höhe ergibt sich aus der Breite (scale)
+await svg2pdfFn(svg, pdf, {
+  x: M,
+  y: M,
+  width:  totalW * scale,
+  height: totalH * scale,
+  preserveAspectRatio: 'xMinYMin meet',
+});
+
+pdf.setProperties({ title: 'MultiProzesse' });
+const todayStr = new Date().toISOString().slice(0,10);
+pdf.save(`MultiProzesse_${todayStr}.pdf`);
+
+
+}
+
 
 
 
@@ -899,7 +1399,7 @@ const LABEL_X_GAP = 4;          // min. horizontaler Abstand zw. Labels
 // Milestones dieser Row (links -> rechts)
 const msItems = packed
   .map((it, i) => ({ it, i }))
-  .filter(({ it }) => diffDays(it._sC, it._eC) === 0)
+  .filter(({ it }) => (it.durationDays || 0) === 0)
   .sort((a, b) => diffDays(from, a.it._sC) - diffDays(from, b.it._sC));
 
 // Greedy-Lanes nur für Labels (immer rechts vom Diamanten)
@@ -946,6 +1446,7 @@ const rowHeight = Math.max(barsHeight + msBlockH, LABEL_MIN_H);
     boxShadow: "2px 0 0 #e5e7eb inset",
   }}
 >
+{/* linke (sticky) Zelle – absolut positionierter Text */}
 <div
   data-lefttext
   data-pdf-text
@@ -958,38 +1459,43 @@ const rowHeight = Math.max(barsHeight + msBlockH, LABEL_MIN_H);
     lineHeight: 1,
     display: "flex",
     flexDirection: "column",
-    gap: 2,
-  }}
->
-<div
-  className="font-medium text-slate-900"
-  style={{
-    height: LABEL_TITLE_LH,
-    lineHeight: `${LABEL_TITLE_LH}px`,
-    whiteSpace: "nowrap",
+    gap: 4,
+    // Platz: volle Zeilenhöhe nutzen
+    maxHeight: rowHeight - ROW_PAD * 2,
     overflow: "hidden",
-    textOverflow: "ellipsis",
-    margin: 0, padding: 0, transform: "translateY(0)"
   }}
 >
-  {g.project}
-</div>
-
-<div
-  className="text-sm text-slate-500"
-  style={{
-    height: LABEL_SUB_LH,
-    lineHeight: `${LABEL_SUB_LH}px`,
-    whiteSpace: "nowrap",
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-    margin: 0, padding: 0, transform: "translateY(0)"
-  }}
->
-  {g.area}
-</div>
-
+  {/* Titel (Projekt) – darf umbrechen */}
+  <div
+    className="font-medium text-slate-900"
+    style={{
+      fontSize: 16,
+      lineHeight: "20px",
+      whiteSpace: "normal",
+      wordBreak: "break-word",
+      overflowWrap: "anywhere",
+      margin: 0, padding: 0,
+    }}
+  >
+    {g.project}
   </div>
+
+  {/* Sub (Bereichspfad) – darf umbrechen, etwas kleiner/heller */}
+  <div
+    className="text-sm text-slate-500"
+    style={{
+      fontSize: 13,
+      lineHeight: "18px",
+      whiteSpace: "normal",
+      wordBreak: "break-word",
+      overflowWrap: "anywhere",
+      margin: 0, padding: 0,
+    }}
+  >
+    {g.area}
+  </div>
+</div>
+
 </div>
 
 
@@ -1040,7 +1546,7 @@ const rowHeight = Math.max(barsHeight + msBlockH, LABEL_MIN_H);
   const top = ROW_PAD + msBlockH + it._lane * (BAR_H + V_GAP);
 
   // 👉 Meilenstein? (Dauer 0 Tage)
-  const isMilestone = diffDays(it._sC, it._eC) === 0;
+  const isMilestone = (it.durationDays || 0) === 0;
 
 if (isMilestone) {
   const layout = msLayout.get(i); // aus dem Prepass

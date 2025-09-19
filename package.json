@@ -20,7 +20,7 @@
     "express": "^5.1.0",
     "framer-motion": "^10.12.12",
     "html2canvas": "^1.4.1",
-    "jspdf": "^3.0.2",
+    "jspdf": "^2.5.2",
     "lucide-react": "^0.487.0",
     "next": "^13.5.8",
     "puppeteer": "^24.18.0",
@@ -30,6 +30,7 @@
     "react-dom": "^18.3.1",
     "react-icons": "^4.3.1",
     "react-select": "^5.10.1",
+    "svg2pdf.js": "^2.5.0",
     "xlsx": "^0.18.5"
   },
   "scripts": {

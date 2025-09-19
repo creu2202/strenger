@@ -1,1 +1,23 @@
+# Node / JS
 node_modules/
+npm-debug.log*
+yarn.lock
+pnpm-lock.yaml
+
+# Next.js
+.next/
+out/
+
+# Build Artefakte
+dist/
+coverage/
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+
+# Env
+.env*

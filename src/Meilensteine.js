@@ -7,6 +7,8 @@ import { Line } from "@visx/shape";
 import { AxisBottom, AxisLeft } from "@visx/axis";
 import { useTooltip, TooltipWithBounds, defaultStyles } from "@visx/tooltip";
 
+const DURATION_KEYS = ["Duration", "Dauer", "Dauer [d]", "Duration (d)"];
+
 const excelDateToJSDate = (serial) => {
   const utc_days = Math.floor(serial - 25569);
   const utc_value = utc_days * 86400;
@@ -43,7 +45,25 @@ const Meilensteine = ({ data, projects, selectedProjects, gewerkFilter }) => {
         const progress = row["Status"] * 100;
         const daysUntilDue = Math.ceil((startDate - today) / (1000 * 60 * 60 * 24));
 
-        if (startDate && endDate && startDate.getTime() === endDate.getTime()) {
+        // Dauer aus API-Feld ermitteln (oder inklusiv aus Start/Ende berechnen)
+        let durationDays = null;
+        for (const k of DURATION_KEYS) {
+          const v = row[k];
+          if (v != null && v !== "") {
+            const num = Number(String(v).replace(",", "."));
+            if (isFinite(num)) { durationDays = Math.max(0, Math.round(num)); break; }
+          }
+        }
+        if (durationDays == null) {
+          if (startDate && endDate) {
+            const diff = Math.round((endDate.setHours(0,0,0,0) - startDate.setHours(0,0,0,0)) / 86400000);
+            durationDays = Math.max(0, diff + 1); // inkl. beide Tage
+          } else {
+            durationDays = 0;
+          }
+        }
+
+        if (durationDays === 0) {
           let milestoneType;
           if (progress === 100) {
             milestoneType = "completed";
