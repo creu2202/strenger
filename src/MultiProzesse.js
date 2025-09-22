@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { FaCalendarAlt, FaCheck } from "react-icons/fa";
 
 
@@ -283,10 +283,40 @@ export default function MultiProzesse({
   const from = addDays(today, -14); // -2 Wochen
   const to   = addDays(today, +42); // +6 Wochen
   const [isExporting, setIsExporting] = useState(false);
+  const [showLogoModal, setShowLogoModal] = useState(false);
+  const [logoDataUrl, setLogoDataUrl] = useState(null);
+
+    const defaultTitle = `Multi Projekt Ansicht: (–2 / +6 Wochen) – Zeitraum: ${from.toLocaleDateString('de-DE')} – ${to.toLocaleDateString('de-DE')}`;
+    const [exportTitle, setExportTitle] = useState(defaultTitle);
+
+    const onLogoFileChange = (e) => {
+      const file = e?.target?.files && e.target.files[0];
+      if (!file) {
+        setLogoDataUrl(null);
+        try { if (typeof window !== 'undefined') localStorage.removeItem('mp.lastLogoDataUrl'); } catch {}
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => {
+        setLogoDataUrl(reader.result);
+        try { if (typeof window !== 'undefined') localStorage.setItem('mp.lastLogoDataUrl', reader.result); } catch {}
+      };
+      reader.readAsDataURL(file);
+    };
+
+    // Beim Mount: zuletzt verwendetes Logo aus localStorage laden (falls vorhanden)
+    useEffect(() => {
+      try {
+        if (typeof window !== 'undefined') {
+          const last = localStorage.getItem('mp.lastLogoDataUrl');
+          if (last) setLogoDataUrl(last);
+        }
+      } catch {}
+    }, []);
 
 
   
-const normalizedBereichFilter = useMemo(
+  const normalizedBereichFilter = useMemo(
   () => (bereichFilter || []).map(b => String(b).toLowerCase().trim()),
   [bereichFilter]
 );
@@ -1102,8 +1132,26 @@ const M  = 16;                    // Rand
 // Nur nach Breite skalieren:
 const scale = (PW - 2 * M) / totalW;
 
-// Benötigte Seitenhöhe dynamisch aus SVG-Gesamthöhe:
-let PH = 2 * M + totalH * scale;  // Page Height (variabel)
+// Header vorbereiten (Titel + Erstelldatum + Logo rechts)
+const titleText = (exportTitle && exportTitle.trim()) ? exportTitle.trim() : defaultTitle;
+const createdText = `Erstelldatum: ${new Date().toLocaleDateString('de-DE')}`;
+const rightLogoW = logoDataUrl ? 90 : 0; // pt (kleiner als zuvor)
+const rightLogoH = logoDataUrl ? 45 : 0; // pt
+const rightPad = logoDataUrl ? 12 : 0;   // Abstand zw. Text und Logo
+
+// Für Zeilenumbruch des Titels verfügbare Breite bestimmen
+const textMaxWidth = PW - 2*M - (rightLogoW + rightPad);
+
+// Temporäres jsPDF-Objekt zum Messen
+const tmpPdf = new jsPDF({ unit: 'pt', format: [PW, 200] });
+tmpPdf.setFont('helvetica', 'bold');
+tmpPdf.setFontSize(12);
+const titleDims = tmpPdf.getTextDimensions(titleText, { maxWidth: textMaxWidth });
+const TITLE_FS = 12, DATE_FS = 10, GAP_Y = 6;
+let pdfHeaderH = Math.max(46, titleDims.h + GAP_Y + DATE_FS + 6);
+
+// Benötigte Seitenhöhe dynamisch aus SVG-Gesamthöhe (+ Header)
+let PH = 2 * M + pdfHeaderH + totalH * scale;  // Page Height (variabel)
 // jsPDF hat in manchen Viewern ein sehr großes Seitenlimit (~14400pt)
 const MAX_PT = 14400;
 if (PH > MAX_PT) PH = MAX_PT;     // optionaler Schutz – sonst wird’s >200″ sehr lang
@@ -1115,16 +1163,45 @@ const pdf = new jsPDF({
   format: [PW, PH],
 });
 
-// Zeichnen: x=M, y=M; Höhe ergibt sich aus der Breite (scale)
+// Header zeichnen
+pdf.setFont('helvetica', 'bold');
+pdf.setFontSize(TITLE_FS);
+pdf.text(titleText, M, M + TITLE_FS, { maxWidth: textMaxWidth });
+
+pdf.setFont('helvetica', 'normal');
+pdf.setFontSize(DATE_FS);
+pdf.text(createdText, M, M + TITLE_FS + GAP_Y + DATE_FS);
+
+// Logo rechts oben einfügen (kleiner)
+if (logoDataUrl) {
+  try {
+    let format = 'PNG';
+    if (typeof logoDataUrl === 'string') {
+      if (logoDataUrl.startsWith('data:image/jpeg')) format = 'JPEG';
+      else if (logoDataUrl.startsWith('data:image/webp')) format = 'WEBP';
+      else if (logoDataUrl.startsWith('data:image/png')) format = 'PNG';
+      else if (logoDataUrl.startsWith('data:image/svg')) format = 'SVG';
+    }
+    const x = PW - M - rightLogoW;
+    const y = M;
+    pdf.addImage(logoDataUrl, format, x, y, rightLogoW, rightLogoH);
+  } catch (e) {
+    // Logo optional, Fehler ignorieren
+  }
+}
+
+// SVG-Inhalt unterhalb des Headers rendern
 await svg2pdfFn(svg, pdf, {
   x: M,
-  y: M,
+  y: M + pdfHeaderH,
   width:  totalW * scale,
   height: totalH * scale,
   preserveAspectRatio: 'xMinYMin meet',
 });
 
 pdf.setProperties({ title: 'MultiProzesse' });
+
+
 const todayStr = new Date().toISOString().slice(0,10);
 pdf.save(`MultiProzesse_${todayStr}.pdf`);
 
@@ -1149,7 +1226,7 @@ pdf.save(`MultiProzesse_${todayStr}.pdf`);
         <span className="text-xs text-gray-500">• {groups.reduce((n,g)=>n+g.items.length,0)} Einträge</span>
              <div className="ml-auto">
          <button
-           onClick={handleExportPDF}
+           onClick={() => setShowLogoModal(true)}
            className="px-3 py-2 rounded-md bg-black/80 hover:bg-black text-white text-sm font-medium border border-black/20 shadow"
            title="Plan als PDF exportieren"
          >
@@ -1157,6 +1234,60 @@ pdf.save(`MultiProzesse_${todayStr}.pdf`);
          </button>
        </div>
      </div>
+
+ {/* Logo-Upload Modal */}
+ {showLogoModal && (
+   <div className="fixed inset-0 z-50">
+     <div className="absolute inset-0 bg-black/50" onClick={() => setShowLogoModal(false)} />
+     <div className="relative mx-auto mt-24 w-[92vw] max-w-md rounded-lg bg-white p-4 shadow-lg">
+       <h3 className="text-lg font-semibold mb-1">Logo für PDF</h3>
+       <p className="text-sm text-gray-600 mb-3">Lade ein Bild hoch (PNG, JPG oder WebP). Es wird oben rechts in der PDF platziert.</p>
+
+       {/* Titel bearbeiten */}
+       <label className="block text-sm font-medium text-gray-700 mb-1">Titel für PDF</label>
+       <input
+         type="text"
+         value={exportTitle}
+         onChange={(e) => setExportTitle(e.target.value)}
+         className="mb-3 w-full rounded-md border border-gray-300 px-2 py-1 text-sm text-black placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-black/20"
+         placeholder={defaultTitle}
+       />
+
+       {/* Preview von Titel + Erstelldatum */}
+       <div className="mb-3 rounded-md border border-gray-200 bg-gray-50 p-2">
+         <div className="text-base font-semibold text-gray-900">{exportTitle || defaultTitle}</div>
+         <div className="text-xs text-gray-600">Erstelldatum: {new Date().toLocaleDateString('de-DE')}</div>
+       </div>
+
+       {logoDataUrl ? (
+         <div className="mb-3">
+           <div className="text-xs text-gray-500 mb-1">Logo-Vorschau:</div>
+           <img src={logoDataUrl} alt="Logo-Vorschau" className="max-h-24 ml-auto" />
+         </div>
+       ) : null}
+       <input
+         type="file"
+         accept="image/png,image/jpeg,image/webp,image/svg+xml"
+         onChange={onLogoFileChange}
+         className="mb-4 w-full text-sm"
+       />
+       <div className="flex justify-end gap-2">
+         <button
+           onClick={() => setShowLogoModal(false)}
+           className="px-3 py-2 rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50 text-sm"
+         >
+           Abbrechen
+         </button>
+         <button
+           onClick={async () => { setShowLogoModal(false); await handleExportPDF(); }}
+           className="px-3 py-2 rounded-md bg-black text-white hover:bg-black/90 text-sm"
+         >
+           Export starten
+         </button>
+       </div>
+     </div>
+   </div>
+ )}
 
  {/* Rahmen */}
 <div

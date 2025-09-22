@@ -23,8 +23,7 @@ const PROJECT_TABS = {
   struktur: { label: "Kosten", icon: FaSitemap },
   kosten: { label: "Flächenterminplan", icon: FaSitemap },
   multiProzesse: { label: "6-Wochen Vorschau", icon: FaTasks },
-};
-
+}
 // ---- Helper für "Responsibles" (gleich wie im Modul) ------------------------
 const RESPONSIBLE_KEYS = [
   "Responsibles", "Responsible", "Verantwortlich", "Verantwortliche", "Verantwortliche(r)"
