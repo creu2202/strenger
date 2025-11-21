@@ -37,10 +37,11 @@ const parseResponsibles = (val) => {
 };
 
 const PROJECTS = [
-  { name: "Projekt 16 – CBB", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=4a522e60-ecec-432e-b45d-9264c2a56e94", projectId: "4a522e60-ecec-432e-b45d-9264c2a56e94" },
-  { name: "Projekt: 16 – CBB-Logistik", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=bf3ee326-d02e-4172-a005-9e3544625ad4", projectId: "bf3ee326-d02e-4172-a005-9e3544625ad4" },
-  { name: "Projekt: 16 – Ried F Fassade", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=8b177925-d1b1-4d7e-bbfe-7cd981dc54ef", projectId: "8b177925-d1b1-4d7e-bbfe-7cd981dc54ef" },
-  { name: "Projekt: 16 – Ried F Holzbau", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=e542328a-7ef3-4d52-9fb8-7db97d1e9499", projectId: "e542328a-7ef3-4d52-9fb8-7db97d1e9499" },
+  { name: "BALL Übergreifend", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=db4b5803-1637-49ef-9485-8eac238e450b", projectId: "db4b5803-1637-49ef-9485-8eac238e450b" },
+  { name: "PFA Lübeck", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=e36ad9a3-9663-4427-aa93-60fda419f8ec", projectId: "e36ad9a3-9663-4427-aa93-60fda419f8ec" },
+  { name: "PFA 3 NEU", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=bd710f48-8c38-457c-a295-96ae222f2d35", projectId: "bd710f48-8c38-457c-a295-96ae222f2d35" },
+  { name: "PFA 1.2", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=bcb39e6f-31a8-4a09-919c-d9875b0e2d3d", projectId: "bcb39e6f-31a8-4a09-919c-d9875b0e2d3d" },
+    { name: "PFA 1.1", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=471edc40-2715-4484-bb56-5342106687ff", projectId: "471edc40-2715-4484-bb56-5342106687ff" },
 ];
 
 const TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI3N2U3OGMyMC0yNmVhLTQ3OWQtYjIzMS00MGRkNzIxYWZiNDEiLCJlbWFpbCI6ImNocmlzdGlhbi5yZXV0ZXJAbGNtZGlnaXRhbC5jb20iLCJ0cyI6NjQ4LCJsaWMiOnsiZWRpdCI6MX0sImlhdCI6MTc0MTE4MzQ5Mn0.a42tshg1OH8gzYu0AsEaeymx8ebWOdNA2rZzz9rdd1c";
