@@ -37,11 +37,14 @@ const parseResponsibles = (val) => {
 };
 
 const PROJECTS = [
-  { name: "BALL Übergreifend", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=db4b5803-1637-49ef-9485-8eac238e450b", projectId: "db4b5803-1637-49ef-9485-8eac238e450b" },
-  { name: "PFA Lübeck", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=e36ad9a3-9663-4427-aa93-60fda419f8ec", projectId: "e36ad9a3-9663-4427-aa93-60fda419f8ec" },
-  { name: "PFA 3 NEU", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=bd710f48-8c38-457c-a295-96ae222f2d35", projectId: "bd710f48-8c38-457c-a295-96ae222f2d35" },
-  { name: "PFA 1.2", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=bcb39e6f-31a8-4a09-919c-d9875b0e2d3d", projectId: "bcb39e6f-31a8-4a09-919c-d9875b0e2d3d" },
-    { name: "PFA 1.1", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=471edc40-2715-4484-bb56-5342106687ff", projectId: "471edc40-2715-4484-bb56-5342106687ff" },
+  { name: "23338-00; 23339-00; 23340-00 Netzsch Technikum Selb 14.10.2025 - Rev.00 -", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=26f77435-d1ef-4528-871c-2b965af907fb", projectId: "26f77435-d1ef-4528-871c-2b965af907fb" },
+  { name: "23342-00; 23343-00; 23344-00 Knorr Bremse, Aldersbach 18.11.2025 – Vorabzug -", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=6483e85b-a56a-4d9d-a6fd-21d5e82176b0", projectId: "6483e85b-a56a-4d9d-a6fd-21d5e82176b0" },
+  { name: "23347-00 Paulaner Geb.Z10,  München 22.10.2025 - Rev.01 -", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=aad9c879-ccc6-4a0c-9530-fddeea160382", projectId: "aad9c879-ccc6-4a0c-9530-fddeea160382" },
+  { name: "23350-00 BMW Geb. 41.5 Alpina, Dingolfing - 10.11.2025 – Vorabzug -", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=bc490588-7054-4d2f-9a0f-ba6bb3870fda", projectId: "bc490588-7054-4d2f-9a0f-ba6bb3870fda" },
+    { name: "23353-00 Meier Bau, Netto Vilshofen 22.10.2025 - Rev.00 -", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=1a4a0ca8-d1b3-4ab4-ae60-6331b033414f", projectId: "1a4a0ca8-d1b3-4ab4-ae60-6331b033414f" },
+    { name: "23356-00; 23357-00; 23358-00; 23359-00; 23360-00; 23361-00 Markgraf, Lidl Kirchheim - 31.10.2025 – Vorabzug -", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=16c40669-8b0e-4087-aa09-88a92177bdf0", projectId: "16c40669-8b0e-4087-aa09-88a92177bdf0" },
+    { name: "23363-00 Porr BMW Westside, München 30.10.2025 - Rev.00 -", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=56817840-342a-45f8-bbf8-9136eaf7cef1", projectId: "56817840-342a-45f8-bbf8-9136eaf7cef1" },
+    { name: "23365-00 Grossmann Alpma, Rott am Inn 17.11.2025 - Rev.00 -", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=a701a1b5-2176-480c-837b-bff09a5089d5", projectId: "a701a1b5-2176-480c-837b-bff09a5089d5" },
 ];
 
 const TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI3N2U3OGMyMC0yNmVhLTQ3OWQtYjIzMS00MGRkNzIxYWZiNDEiLCJlbWFpbCI6ImNocmlzdGlhbi5yZXV0ZXJAbGNtZGlnaXRhbC5jb20iLCJ0cyI6NjQ4LCJsaWMiOnsiZWRpdCI6MX0sImlhdCI6MTc0MTE4MzQ5Mn0.a42tshg1OH8gzYu0AsEaeymx8ebWOdNA2rZzz9rdd1c";
