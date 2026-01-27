@@ -96,9 +96,9 @@ const Meilensteine = ({ data, projects, selectedProjects, gewerkFilter }) => {
     return list;
   }, [data, projects, selectedProjects, filter, gewerkFilter]);
 
-  const width = 900;
-  const height = 250;
-  const margin = { top: 40, right: 20, bottom: 60, left: 150 };
+  const width = 1200;
+  const height = 500;
+  const margin = { top: 40, right: 300, bottom: 60, left: 180 };
   const xMax = width - margin.left - margin.right;
   const yMax = height - margin.top - margin.bottom;
 
@@ -113,13 +113,144 @@ const Meilensteine = ({ data, projects, selectedProjects, gewerkFilter }) => {
   const yScale = scaleBand({
     domain: [...new Set(milestoneData.map((d) => d.project))],
     range: [0, yMax],
-    padding: 0.4,
+    padding: 0.6, // Mehr Padding für vertikale Trennung
   });
 
   const getColor = (type) => {
     if (type === "completed") return "#0dd4c4";
     if (type === "overdue") return "#ce5c63";
-    return "#e1aa6a";
+    return "#e28a2b"; // Orange-Ton wie im Screenshot
+  };
+
+  const getLightColor = (type) => {
+    if (type === "completed") return "#e0fbf9";
+    if (type === "overdue") return "#f9eaea";
+    return "#fef4e8"; // Helles Orange
+  };
+
+  const MilestoneElement = ({ d, x, y, margin, showTooltip, hideTooltip, getColor, getLightColor }) => {
+    const [isHovered, setIsHovered] = useState(false);
+    const mainColor = getColor(d.milestoneType);
+    const lightColor = getLightColor(d.milestoneType);
+    const labelText = d.process || "Meilenstein";
+    const labelWidth = labelText.length * 7 + 25;
+
+    return (
+      <g
+        transform={`translate(${x}, ${y})`}
+        onMouseEnter={() => {
+          setIsHovered(true);
+          showTooltip({
+            tooltipLeft: margin.left + x,
+            tooltipTop: margin.top + y - 10,
+            tooltipData: d,
+          });
+        }}
+        onMouseMove={() =>
+          showTooltip({
+            tooltipLeft: margin.left + x,
+            tooltipTop: margin.top + y - 10,
+            tooltipData: d,
+          })
+        }
+        onMouseLeave={() => {
+          setIsHovered(false);
+          hideTooltip();
+        }}
+        style={{ cursor: "pointer" }}
+        pointerEvents="all"
+        onClick={() => {
+          window.open(
+            `https://share.lcmdigital.com/?project=${d.projectId}&processid=${d.id}`,
+            "_blank"
+          );
+        }}
+      >
+        {/* Transparent hit area to make hovering easier */}
+        <circle r="20" fill="transparent" pointerEvents="all" />
+
+        {/* Label Group with Animation */}
+        <motion.g
+          initial={false}
+          animate={{ x: isHovered ? 0 : -10, opacity: isHovered ? 1 : 0 }}
+          transition={{ type: "spring", stiffness: 300, damping: 30 }}
+          style={{ pointerEvents: "none" }}
+        >
+          {/* Label Background */}
+          <motion.rect
+            x="0"
+            y="-13"
+            initial={{ width: 0 }}
+            animate={{ width: isHovered ? labelWidth : 0 }}
+            height="26"
+            rx="13"
+            fill={lightColor}
+            stroke="black"
+            strokeWidth="1.5"
+            transition={{ type: "spring", stiffness: 200, damping: 25 }}
+          />
+          
+          {/* Label Text */}
+          <motion.text
+            x="18"
+            y="4"
+            fill="#333"
+            fontSize="11"
+            fontWeight="600"
+            fontFamily="Inter, sans-serif"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: isHovered ? 1 : 0 }}
+            transition={{ delay: isHovered ? 0.1 : 0 }}
+          >
+            {labelText}
+          </motion.text>
+        </motion.g>
+
+        {/* Diamond (Outer) - Always on top */}
+        <path
+          d="M -16 0 L 0 -16 L 16 0 L 0 16 Z"
+          fill="white"
+          stroke="black"
+          strokeWidth="1.5"
+          style={{ pointerEvents: "auto" }}
+        />
+        {/* Diamond (Inner) */}
+        <path
+          d="M -13 0 L 0 -13 L 13 0 L 0 13 Z"
+          fill={mainColor}
+          style={{ pointerEvents: "auto" }}
+        />
+        
+        {/* Helmet Icon */}
+        <path
+          d="M -5 1 Q -5 -4 0 -4 Q 5 -4 5 1 L -5 1 Z"
+          fill="white"
+          style={{ pointerEvents: "none" }}
+        />
+        <path
+          d="M -3 2 L 3 2"
+          stroke="white"
+          strokeWidth="1"
+          style={{ pointerEvents: "none" }}
+        />
+      </g>
+    );
+  };
+
+  const renderLcmMilestone = (d, x, y) => {
+    return (
+      <MilestoneElement
+        key={`${d.project}-${d.id}`}
+        d={d}
+        x={x}
+        y={y}
+        margin={margin}
+        showTooltip={showTooltip}
+        hideTooltip={hideTooltip}
+        getColor={getColor}
+        getLightColor={getLightColor}
+      />
+    );
   };
 
   return (
@@ -137,8 +268,8 @@ const Meilensteine = ({ data, projects, selectedProjects, gewerkFilter }) => {
       </div>
 
       <h2 className="text-3xl font-bold mb-6">Meilensteine Übersicht</h2>
-      <div className="relative">
-        <svg width={width} height={height} className="bg-[#111] rounded-lg">
+      <div className="relative overflow-x-auto">
+        <svg width={width} height={height} className="bg-[#111] rounded-lg min-w-full">
           <Group left={margin.left} top={margin.top}>
             <AxisBottom
               top={yMax}
@@ -155,35 +286,7 @@ const Meilensteine = ({ data, projects, selectedProjects, gewerkFilter }) => {
             {milestoneData.map((d) => {
               const x = xScale(d.date.getTime());
               const y = yScale(d.project) + yScale.bandwidth() / 2;
-              return (
-                <g
-                  key={`${d.project}-${d.id}`}
-                  transform={`translate(${x}, ${y})`}
-                  onMouseEnter={() =>
-                      showTooltip({
-                        tooltipLeft: margin.left + x,
-                        tooltipTop: margin.top + y - 10,
-                        tooltipData: d,
-                      })
-                    }
-                    onMouseMove={() =>
-                      showTooltip({
-                        tooltipLeft: margin.left + x,
-                        tooltipTop: margin.top + y - 10,
-                        tooltipData: d,
-                      })
-                    }
-
-                  onMouseLeave={hideTooltip}
-                >
-                  <polygon
-                    points="-5,0 0,-8 5,0 0,8"
-                    fill={getColor(d.milestoneType)}
-                    stroke="#fff"
-                    strokeWidth="1"
-                  />
-                </g>
-              );
+              return renderLcmMilestone(d, x, y);
             })}
             <Line
               from={{ x: xScale(today.getTime()), y: 0 }}

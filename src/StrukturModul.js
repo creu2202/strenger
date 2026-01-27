@@ -19,10 +19,17 @@ const StrukturModul = ({ data, selectedProject }) => {
   }, []);
 
   useEffect(() => {
-    if (!selectedProject || !data[selectedProject]) return;
-
-    setSelectedTrade(null); // fix für Projektwechsel
+    setSelectedTrade(null);
     setExpanded({});
+    setInputValue("");
+  }, [selectedProject]);
+
+  useEffect(() => {
+    setInputValue("");
+  }, [selectedTrade]);
+
+  useEffect(() => {
+    if (!selectedProject || !data[selectedProject]) return;
 
     const gewerke = Array.from(new Set(data[selectedProject].map((r) => r.Trade).filter(Boolean)));
     const sortedGewerke = gewerke.sort((a, b) => {
@@ -199,7 +206,7 @@ const StrukturModul = ({ data, selectedProject }) => {
       const updated = {
         ...prev,
         [selectedProject]: {
-          ...prev[selectedProject],
+          ...(prev[selectedProject] || {}),
           [selectedTrade]: value,
         },
       };

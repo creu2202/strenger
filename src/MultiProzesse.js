@@ -8,6 +8,10 @@ const START_KEYS = ["Start Date","Start","StartDate","Starttermin","Anfang"];
 const END_KEYS   = ["End Date","End","EndDate","Endtermin","Finish"];
 const DURATION_KEYS = ["Duration", "Dauer", "Dauer [d]", "Duration (d)"];
 const TRADE_KEYS = ["Trade","Gewerk"];
+// Prozess-ID Keys (für Zuordnung zu Personen aus Karten)
+const PROCESS_ID_KEYS = [
+  "Process Id", "ProcessID", "ProcessId", "Prozess Id", "ProzessID", "Process GUID", "Process Guid", "ProcessGUID", "ID"
+];
 
 const COLOR_KEYS = ["Trade Background Color", "Trade BG Color", "Trade Color", "Gewerk Farbe"];
 
@@ -278,6 +282,7 @@ export default function MultiProzesse({
   gewerkFilter = [],
   bereichFilter = [],
   responsiblesFilter = [],          // <— NEU
+  peopleByProcess = {},
 }) {
   const today = startOfDay(new Date());
   const from = addDays(today, -14); // -2 Wochen
@@ -285,6 +290,12 @@ export default function MultiProzesse({
   const [isExporting, setIsExporting] = useState(false);
   const [showLogoModal, setShowLogoModal] = useState(false);
   const [logoDataUrl, setLogoDataUrl] = useState(null);
+  const [showResourceCurve, setShowResourceCurve] = useState(false);
+  // Hover-Interaktion für Ressourcenkurve
+  const resCurveRef = useRef(null);
+  const [hoverDayIdx, setHoverDayIdx] = useState(null);
+  const [hoverTrade, setHoverTrade] = useState(null);
+  const [hoverPos, setHoverPos] = useState({ x: 0, y: 0 });
 
     const defaultTitle = `Multi Projekt Ansicht: (–2 / +6 Wochen) – Zeitraum: ${from.toLocaleDateString('de-DE')} – ${to.toLocaleDateString('de-DE')}`;
     const [exportTitle, setExportTitle] = useState(defaultTitle);
@@ -326,9 +337,73 @@ const normalizedResponsiblesFilter = useMemo(                 // <— NEU
   [responsiblesFilter]
 );
 
-  const dayWidth = 28; // px pro Tag (anpassbar)
-  const totalDays = Math.max(1, diffDays(from, to) + 1);
+  // Arbeitskalender: nur Montag–Donnerstag sichtbar/gezählt
+  const isWorkday = (d) => {
+    const wd = d.getDay();
+    return wd >= 1 && wd <= 4; // 1=Mo ... 4=Do
+  };
+  const countWorkdaysInclusive = (a, b) => {
+    if (!a || !b) return 0;
+    const start = startOfDay(a);
+    const end = startOfDay(b);
+    let c = 0;
+    if (start <= end) {
+      for (let d = start; d <= end; d = addDays(d, 1)) if (isWorkday(d)) c++;
+    } else {
+      for (let d = start; d >= end; d = addDays(d, -1)) if (isWorkday(d)) c++;
+    }
+    return c;
+  };
+  const diffWorkdays = (a, b) => {
+    if (!a || !b) return 0;
+    const start = startOfDay(a);
+    const end = startOfDay(b);
+    let c = 0;
+    if (start <= end) {
+      for (let d = start; d < end; d = addDays(d, 1)) if (isWorkday(d)) c++;
+      return c;
+    } else {
+      for (let d = start; d > end; d = addDays(d, -1)) if (isWorkday(d)) c++;
+      return -c;
+    }
+  };
+
+  const [dayWidth, setDayWidth] = useState(28); // px pro Tag (responsive)
+  // Nur Arbeitstage (Mo-Do) innerhalb des Fensters anzeigen
+  const days = useMemo(() => {
+    const res = [];
+    for (let d = from; d <= to; d = addDays(d, 1)) {
+      if (isWorkday(d)) res.push(new Date(d));
+    }
+    return res;
+  }, [from, to]);
+  const totalDays = Math.max(1, days.length);
   const timelineWidth = totalDays * dayWidth;
+
+  // Canvas soll die volle Breite ausnutzen -> dayWidth dynamisch an verfügbare Breite anpassen
+  useEffect(() => {
+    const recalc = () => {
+      const sc = scrollRef.current;
+      const avail = (sc ? sc.clientWidth : 0) - 380; // rechte Spaltenbreite = Gesamtbreite minus linke 380px
+      if (avail > 0 && totalDays > 0) {
+        const w = Math.max(18, avail / totalDays); // Mindestbreite je Arbeitstag
+        if (Math.abs(w - dayWidth) > 0.5) setDayWidth(w);
+      }
+    };
+    recalc();
+    let ro;
+    try {
+      if (window && 'ResizeObserver' in window) {
+        ro = new ResizeObserver(() => recalc());
+        if (scrollRef.current) ro.observe(scrollRef.current);
+      }
+      window.addEventListener('resize', recalc);
+    } catch {}
+    return () => {
+      try { window.removeEventListener('resize', recalc); } catch {}
+      try { if (ro) ro.disconnect(); } catch {}
+    };
+  }, [totalDays]);
 
   // --- Daten vorbereiten (wie zuvor), danach in Gruppen (Projekt+Bereichspfad) bündeln
   const groups = useMemo(() => {
@@ -379,7 +454,7 @@ for (const p of data[projName] || []) {
 
 const s    = parseDate(pick(p, START_KEYS));
 const eRaw = parseDate(pick(p, END_KEYS));
-let e = eRaw ? addDays(eRaw, -1) : null;
+let e = eRaw ? eRaw : null;
 if (s && e && e < s) e = s;
 
 // Dauer in Tagen ermitteln (bevor wir Enddatum -1 Tag anwenden)
@@ -424,10 +499,12 @@ if (durationDays == null) {
   const key = `${projName} :: ${area}`;
   if (!map.has(key)) map.set(key, { key, project: projName, area, items: [] });
 
+  const processId = pick(p, PROCESS_ID_KEYS);
   map.get(key).items.push({
     name, trade, start: s, end: e, color, progress, done,
     durationDays,
-    responsibles                                     // <— NEU (für Tooltip etc.)
+    responsibles,                                    // <— NEU (für Tooltip etc.)
+    processId: processId != null ? String(processId) : undefined,
   });
 }
 
@@ -451,10 +528,6 @@ if (durationDays == null) {
 
 
 // Tagesliste über das Fenster
-const days = useMemo(
-  () => Array.from({ length: totalDays }, (_, i) => addDays(from, i)),
-  [from, totalDays]
-);
 
 // Monatssegmente (Label + Span in Tagen)
 const months = useMemo(() => {
@@ -487,10 +560,90 @@ const weeks = useMemo(
   [days]
 );
 
+// Ressourcen pro Tag je Gewerk berechnen (aus peopleByProcess)
+const resourceByDayTrade = useMemo(() => {
+  const len = days.length;
+  const totals = new Array(len).fill(0);
+  const byTrade = new Map(); // trade -> Array(len)
+  const tradeColors = new Map(); // trade -> color
+
+  // Map von YYYY-MM-DD -> Index im days-Array
+  const keyForDate = (d) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`; // lokaler Tagsschlüssel ohne UTC-Verschiebung
+  };
+  const indexByKey = new Map();
+  for (let i = 0; i < len; i++) indexByKey.set(keyForDate(days[i]), i);
+
+  for (const g of groups) {
+    const pplMap = peopleByProcess?.[g.project] || {};
+    for (const it of g.items) {
+      if (!it.processId || !it.trade) continue;
+      const entry = pplMap[it.processId];
+      if (entry == null) continue;
+
+      if (!byTrade.has(it.trade)) byTrade.set(it.trade, new Array(len).fill(0));
+      if (!tradeColors.has(it.trade)) tradeColors.set(it.trade, it.color || colorForTrade(it.trade));
+      const arr = byTrade.get(it.trade);
+
+      if (typeof entry === "number") {
+        // Rückwärtskompatibilität: alte Struktur -> auf gesamte Dauer verteilen
+        // (falls Start/Ende bekannt und im Fenster)
+        const s = it.start || from;
+        const e = it.end || to;
+        const sKey = keyForDate(s);
+        const eKey = keyForDate(e);
+        const sIdx = indexByKey.get(sKey);
+        const eIdx = indexByKey.get(eKey);
+        if (sIdx != null && eIdx != null) {
+          for (let i = Math.max(0, sIdx); i <= Math.min(len - 1, eIdx); i++) {
+            arr[i] += entry;
+            totals[i] += entry;
+          }
+        }
+      } else if (typeof entry === "object") {
+        // Neue Struktur: pro Datum summieren
+        for (const [dKey, val] of Object.entries(entry)) {
+          if (dKey === "__total__") continue;
+          const v = Number(val);
+          if (!isFinite(v) || v <= 0) continue;
+          const idx = indexByKey.get(dKey);
+          if (idx != null) {
+            arr[idx] += v;
+            totals[idx] += v;
+          }
+        }
+      }
+    }
+  }
+
+  // compute palette and sorted trades
+  const trades = Array.from(byTrade.keys());
+  // sort by total descending
+  trades.sort((a,b) => {
+    const sa = byTrade.get(a).reduce((x,y)=>x+y,0);
+    const sb = byTrade.get(b).reduce((x,y)=>x+y,0);
+    return sb - sa;
+  });
+  const maxTotal = totals.reduce((m,v)=>v>m?v:m, 0) || 0;
+  return { byTrade, totals, trades, maxTotal, tradeColors };
+}, [days, groups, peopleByProcess, from, to]);
+
 const MONTH_H = 28;   // Höhe der Monatschips
 const KW_H    = 18;   // Höhe der KW-Zeile
 const GAP_H   = 6;    // Abstand zwischen den Zeilen
-const headerH = MONTH_H + KW_H + GAP_H;
+const BASE_HEADER_H = MONTH_H + KW_H + GAP_H;
+const [RESOURCE_H, setRESOURCE_H] = useState(() => {
+  const v = Number(localStorage.getItem('resourceCurveH'));
+  return isFinite(v) && v >= 24 && v <= 200 ? v : 56;
+}); // Höhe für Ressourcenkurve (veränderbar)
+
+useEffect(() => {
+  try { localStorage.setItem('resourceCurveH', String(RESOURCE_H)); } catch {}
+}, [RESOURCE_H]);
+const headerH = BASE_HEADER_H + (showResourceCurve ? RESOURCE_H : 0);
 
 // Text-Zeilenhöhe links (px)
 const LABEL_TITLE_LH = 20;  // etwa leading-5
@@ -515,7 +668,7 @@ const weekBands = useMemo(() => {
 }, [weeks, days.length]);
 
   const todayOffset = Math.min(
-    Math.max(0, diffDays(from, today) * dayWidth + dayWidth / 2),
+    Math.max(0, diffWorkdays(from, today) * dayWidth + dayWidth / 2),
     timelineWidth
   );
 
@@ -523,8 +676,8 @@ const weekBands = useMemo(() => {
   const barBox = (s, e) => {
     const sClamped = s ? (s < from ? from : (s > to ? to : s)) : from;
     const eClamped = e ? (e > to ? to : (e < from ? from : e)) : to;
-    const left = Math.max(0, diffDays(from, sClamped)) * dayWidth + 3;
-    const width = Math.max(6, (diffDays(sClamped, eClamped) + 1) * dayWidth - 6);
+    const left = Math.max(0, diffWorkdays(from, sClamped)) * dayWidth + 3;
+    const width = Math.max(6, countWorkdaysInclusive(sClamped, eClamped) * dayWidth - 6);
     return { left, width };
   };
 
@@ -662,7 +815,7 @@ const midY = (top, h, fs) => top + h/2 + fs*BASELINE_K; // Baseline für "zentri
 
 async function handleExportPDF() {
   // Maße aus deiner Ansicht übernehmen
-  const LEFT_W = 340;                       // linke Spalte (wie im Grid)
+  const LEFT_W = 380;                       // linke Spalte (wie im Grid)
   const DW     = dayWidth;                  // px pro Tag
   const totalW = LEFT_W + timelineWidth;    // Gesamtbreite
   const PADDING = 16;
@@ -679,11 +832,11 @@ async function handleExportPDF() {
 
   // Heute-Offset
   const today = startOfDay(new Date());
-  const todayOffset = Math.min(Math.max(0, diffDays(from, today) * DW + DW / 2), timelineWidth);
+  const todayOffset = Math.min(Math.max(0, diffWorkdays(from, today) * DW + DW / 2), timelineWidth);
 
   // Row-Heights vorbereiten (identisch wie in deinem Render)
   const rowLayouts = groups.map(g => {
-    const { packed, laneCount } = packIntoLanes(g.items, from, to, diffDays);
+    const { packed, laneCount } = packIntoLanes(g.items, from, to, diffWorkdays);
 
     // Meilenstein-Lanes (wie oben im Code)
     const MS = 14, PAD = 6, LABEL_H = 22, LABEL_W = Math.max(120, DW * 4), LABEL_W_MIN = 60, LABEL_X_GAP = 4;
@@ -691,12 +844,12 @@ async function handleExportPDF() {
     const msItems = packed
       .map((it, i) => ({ it, i }))
       .filter(({ it }) => (it.durationDays || 0) === 0)
-      .sort((a, b) => diffDays(from, a.it._sC) - diffDays(from, b.it._sC));
+      .sort((a, b) => diffWorkdays(from, a.it._sC) - diffWorkdays(from, b.it._sC));
 
     const msLayout = new Map();
     const msLaneEnds = [];
     msItems.forEach(({ it, i }) => {
-      const cx   = diffDays(from, it._sC) * DW + DW / 2;
+      const cx   = diffWorkdays(from, it._sC) * DW + DW / 2;
       const left = cx + MS/2 + PAD;
       const width = Math.max(LABEL_W_MIN, Math.min(LABEL_W, timelineWidth - left));
       const endX = left + width;
@@ -992,7 +1145,7 @@ g.appendChild(t2);
         const laneTop = ROW_PAD + (lay ? lay.lane : 0) * (LABEL_H + V_GAP2);
 
         // Diamant
-        const cx = lay?.cx ?? (diffDays(from, it._sC) * DW + DW/2);
+        const cx = lay?.cx ?? (diffWorkdays(from, it._sC) * DW + DW/2);
         const d = `M ${cx} ${laneTop + (LABEL_H/2) - MS/2}
                    l ${MS/2} ${MS/2} l ${-MS/2} ${MS/2}
                    l ${-MS/2} ${-MS/2} Z`;
@@ -1024,8 +1177,8 @@ g.appendChild(t2);
       }
 
       // Balken
-      const left  = Math.max(0, diffDays(from, it._sC)) * DW + 3;
-      const width = Math.max(6, (diffDays(it._sC, it._eC)+1)*DW - 6);
+      const left  = Math.max(0, diffWorkdays(from, it._sC)) * DW + 3;
+      const width = Math.max(6, countWorkdaysInclusive(it._sC, it._eC)*DW - 6);
       const top   = ROW_PAD + msBlockH + it._lane * (BAR_H2 + V_GAP2);
 
       rightG.appendChild(sx(document.createElementNS(svgNS, "rect"), {
@@ -1224,15 +1377,52 @@ pdf.save(`MultiProzesse_${todayStr}.pdf`);
           Zeitraum: {fmtShort(from)} – {fmtShort(to)}
         </span>
         <span className="text-xs text-gray-500">• {groups.reduce((n,g)=>n+g.items.length,0)} Einträge</span>
-             <div className="ml-auto">
-         <button
-           onClick={() => setShowLogoModal(true)}
-           className="px-3 py-2 rounded-md bg-black/80 hover:bg-black text-white text-sm font-medium border border-black/20 shadow"
-           title="Plan als PDF exportieren"
-         >
-           📄 PDF exportieren
-         </button>
-       </div>
+        <div className="ml-auto flex items-center gap-2">
+          <button
+            onClick={() => setShowResourceCurve(v => !v)}
+            className={`px-3 py-2 rounded-md text-sm font-medium border shadow ${showResourceCurve ? 'bg-[#00e0d6] text-black border-transparent' : 'bg-black/80 hover:bg-black text-white border-black/20'}`}
+            title="Ressourcenkurve (Personen/Tag) ein-/ausblenden"
+          >
+            {showResourceCurve ? 'Ressourcenkurve: AN' : 'Ressourcenkurve: AUS'}
+          </button>
+
+          {/* Größe der Ressourcenkurve einstellen */}
+          <div className="flex items-center gap-2 text-xs text-gray-600">
+            <span className="hidden sm:inline">Höhe:</span>
+            <input
+              type="range"
+              min={24}
+              max={200}
+              step={2}
+              value={RESOURCE_H}
+              onChange={(e) => setRESOURCE_H(Number(e.target.value))}
+              className="w-28 accent-[#00e0d6]"
+              title={`Höhe der Ressourcenkurve: ${RESOURCE_H}px`}
+            />
+            <input
+              type="number"
+              min={24}
+              max={200}
+              step={2}
+              value={RESOURCE_H}
+              onChange={(e) => {
+                const n = Number(e.target.value);
+                if (isFinite(n)) setRESOURCE_H(Math.max(24, Math.min(200, n)));
+              }}
+              className="w-16 px-1 py-1 rounded border border-gray-300 text-gray-800 bg-white"
+              title="Höhe der Ressourcenkurve in Pixel"
+            />
+            <span className="text-gray-500">px</span>
+          </div>
+
+          <button
+            onClick={() => setShowLogoModal(true)}
+            className="px-3 py-2 rounded-md bg-black/80 hover:bg-black text-white text-sm font-medium border border-black/20 shadow"
+            title="Plan als PDF exportieren"
+          >
+            📄 PDF exportieren
+          </button>
+        </div>
      </div>
 
  {/* Logo-Upload Modal */}
@@ -1302,15 +1492,13 @@ pdf.save(`MultiProzesse_${todayStr}.pdf`);
   style={{ maxHeight: "calc(100vh - 140px)" }}  // ggf. 140px an deine Top-Bar anpassen
 >
 
-    {/* Grid mit 2 Spalten: links fix 340px (sticky), rechts Timeline mit fixer Pixelbreite */}
+    {/* Grid mit 2 Spalten: links fix 380px (sticky), rechts Timeline mit fixer Pixelbreite */}
  <div
    ref={gridRef}
    data-grid
    className="grid items-start"
       style={{
-        gridTemplateColumns: `340px ${timelineWidth}px`,
-        // optional: minWidth damit die Scrollbar erscheint
-        minWidth: 340 + timelineWidth,
+        gridTemplateColumns: `380px 1fr`,
         alignItems: 'start',
       }}
     >
@@ -1325,8 +1513,197 @@ pdf.save(`MultiProzesse_${todayStr}.pdf`);
 <div className="sticky top-0 z-20 bg-white border-b border-slate-200 shadow-sm">
   <div className="relative" style={{ height: headerH }}>
 
+    {/* Ressourcen-Kurve (optional) */}
+    {showResourceCurve && (
+      <div
+        className="absolute left-0 right-0"
+        style={{ top: 0, height: RESOURCE_H }}
+        ref={resCurveRef}
+        onMouseMove={(e) => {
+          const rect = resCurveRef.current?.getBoundingClientRect();
+          if (!rect) return;
+          const x = e.clientX - rect.left;
+          const y = e.clientY - rect.top;
+          let idx = Math.floor(x / dayWidth);
+          if (idx < 0) idx = 0;
+          if (idx >= days.length) idx = days.length - 1;
+          // bestimmen, ob ein bestimmtes Gewerk unter der Maus ist
+          const { byTrade, trades, maxTotal } = resourceByDayTrade;
+          const pad = 6;
+          const H = RESOURCE_H - pad * 2;
+          const yFromBottom = RESOURCE_H - y - pad; // 0 am Boden
+          let hoveredTrade = null;
+          if (maxTotal > 0 && yFromBottom >= 0) {
+            let acc = 0;
+            for (const tr of trades) {
+              const arr = byTrade.get(tr) || [];
+              const v = arr[idx] || 0;
+              const h = H * (v / maxTotal);
+              if (h > 0.5) {
+                if (yFromBottom >= acc && yFromBottom <= acc + h) {
+                  hoveredTrade = tr;
+                  break;
+                }
+                acc += h;
+              }
+            }
+          }
+          setHoverTrade(hoveredTrade);
+          setHoverDayIdx(isFinite(idx) ? idx : null);
+          setHoverPos({ x, y });
+        }}
+        onMouseLeave={() => { setHoverDayIdx(null); setHoverTrade(null); }}
+      >
+        <svg width={timelineWidth} height={RESOURCE_H}>
+          {/* Hintergrund */}
+          <defs>
+            <linearGradient id="res-grad" x1="0" x2="0" y1="0" y2="1">
+              <stop offset="0%" stopColor="#00e0d6" stopOpacity="0.35" />
+              <stop offset="100%" stopColor="#00e0d6" stopOpacity="0.05" />
+            </linearGradient>
+          </defs>
+          {/* vertikale Tageslinien dezent */}
+          {days.map((d, i) => (
+            <line key={`rg-${i}`} x1={i * dayWidth} y1={0} x2={i * dayWidth} y2={RESOURCE_H} stroke="#eef2f7" strokeWidth={1} />
+          ))}
+          {/* Gestapelte Balken je Gewerk */}
+          {(() => {
+            const { byTrade, trades, maxTotal } = resourceByDayTrade;
+            const pad = 6;
+            const H = RESOURCE_H - pad*2;
+            const yScale = (v) => maxTotal > 0 ? H * (v / maxTotal) : 0;
+            const elements = [];
+            for (let i = 0; i < days.length; i++) {
+              let yCursor = RESOURCE_H - pad; // von unten nach oben
+              for (const tr of trades) {
+                const arr = byTrade.get(tr) || [];
+                const v = arr[i] || 0;
+                const h = yScale(v);
+                if (h <= 0.5) continue;
+                yCursor -= h;
+                const x = i * dayWidth + 1;
+                const w = Math.max(1, dayWidth - 2);
+                const col = resourceByDayTrade.tradeColors.get(tr) || colorForTrade(tr);
+                const isDim = hoverDayIdx === i && hoverTrade && hoverTrade !== tr;
+                elements.push(
+                  <rect
+                    key={`seg-${tr}-${i}`}
+                    x={x}
+                    y={yCursor}
+                    width={w}
+                    height={Math.max(0.5, h)}
+                    fill={col}
+                    fillOpacity={isDim ? 0.2 : 0.5}
+                    stroke={col}
+                    strokeOpacity={isDim ? 0.4 : 0.8}
+                    strokeWidth={0.5}
+                  />
+                );
+              }
+            }
+            return <g>{elements}</g>;
+          })()}
+          {/* Total-Linie + Fläche */}
+          {(() => {
+            const { totals, maxTotal } = resourceByDayTrade;
+            const pad = 6;
+            const H = RESOURCE_H - pad*2;
+            const points = totals.map((v, i) => {
+              const x = i * dayWidth + dayWidth / 2;
+              const y = RESOURCE_H - pad - (maxTotal > 0 ? H * (v / maxTotal) : 0);
+              return [x, y];
+            });
+            if (!points.length) return null;
+            const path = points.map((p, idx) => `${idx === 0 ? 'M' : 'L'}${p[0]},${p[1]}`).join(' ');
+            const area = `${'M'}${points[0][0]},${RESOURCE_H - pad} ` +
+                         points.map(p => `L${p[0]},${p[1]}`).join(' ') +
+                         ` L${points[points.length-1][0]},${RESOURCE_H - pad} Z`;
+            return (
+              <g>
+                <path d={area} fill="url(#res-grad)" stroke="none" />
+                <path d={path} fill="none" stroke="#00e0d6" strokeWidth={2} />
+                {/* Heute Marker */}
+                <line x1={todayOffset} y1={0} x2={todayOffset} y2={RESOURCE_H} stroke="#ff5a5f" strokeWidth={2} />
+                {/* Hover Tag-Linie */}
+                {hoverDayIdx != null && (
+                  <line
+                    x1={hoverDayIdx * dayWidth + dayWidth / 2}
+                    y1={0}
+                    x2={hoverDayIdx * dayWidth + dayWidth / 2}
+                    y2={RESOURCE_H}
+                    stroke="#111827"
+                    strokeDasharray="3,3"
+                    strokeWidth={1}
+                  />
+                )}
+              </g>
+            );
+          })()}
+        </svg>
+        {/* Mini-Legende rechts */}
+        <div className="absolute top-1 right-2 flex gap-2 text-[10px] text-slate-600 bg-white/70 rounded px-2 py-1">
+          {resourceByDayTrade.trades.slice(0,4).map(tr => (
+            <div key={`leg-${tr}`} className="flex items-center gap-1">
+              <span className="inline-block w-2.5 h-2.5 rounded" style={{ background: (resourceByDayTrade.tradeColors.get(tr) || colorForTrade(tr)) }} />
+              <span className="truncate max-w-[90px]" title={tr}>{tr}</span>
+            </div>
+          ))}
+          {resourceByDayTrade.trades.length > 4 && (
+            <span>+{resourceByDayTrade.trades.length - 4} mehr</span>
+          )}
+        </div>
+        {/* Tooltip bei Hover */}
+        {hoverDayIdx != null && (
+          <div
+            className="absolute z-10 bg-white border border-slate-300 rounded-md shadow-lg text-[11px] text-slate-800 p-2 max-w-[280px]"
+            style={{
+              left: Math.min(Math.max(4, hoverPos.x + 12), timelineWidth - 200),
+              top: Math.min(Math.max(2, hoverPos.y + 12), RESOURCE_H - 2),
+            }}
+          >
+            {(() => {
+              const d = days[hoverDayIdx];
+              const dateStr = d?.toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' });
+              const { byTrade, trades, totals } = resourceByDayTrade;
+              const items = trades
+                .map(tr => ({ tr, v: (byTrade.get(tr) || [])[hoverDayIdx] || 0 }))
+                .filter(it => it.v > 0)
+                .sort((a,b) => b.v - a.v);
+              const total = totals[hoverDayIdx] || 0;
+              const focusIdx = hoverTrade ? items.findIndex(x => x.tr === hoverTrade) : -1;
+              if (focusIdx > 0) {
+                const f = items.splice(focusIdx, 1)[0];
+                items.unshift(f);
+              }
+              return (
+                <div>
+                  <div className="font-semibold text-[12px] mb-1">{dateStr}</div>
+                  <div className="mb-1 text-[11px]"><span className="font-semibold">Total:</span> {total.toLocaleString('de-DE')} Pers.</div>
+                  <div className="max-h-40 overflow-auto pr-1">
+                    {items.length === 0 ? (
+                      <div className="text-slate-500">Keine Ressourcen geplant</div>
+                    ) : (
+                      items.map(({ tr, v }) => (
+                        <div key={`tt-${tr}`} className="flex items-center gap-2 py-0.5">
+                          <span className="inline-block w-2.5 h-2.5 rounded" style={{ background: (resourceByDayTrade.tradeColors.get(tr) || colorForTrade(tr)) }} />
+                          <span className="flex-1 truncate" title={tr}>
+                            {tr}
+                          </span>
+                          <span className="tabular-nums">{v.toLocaleString('de-DE')}</span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+        )}
+      </div>
+    )}
+
     {/* Monats-Hintergrundbänder (sehr dezent) */}
-    <div className="absolute inset-0 -z-10">
+    <div className="absolute left-0 right-0 -z-10" style={{ top: showResourceCurve ? RESOURCE_H : 0, bottom: 0 }}>
       {months.map((m, i) => (
         <div
           key={`mon-bg-${i}`}
@@ -1346,7 +1723,7 @@ pdf.save(`MultiProzesse_${todayStr}.pdf`);
     </div>
 
     {/* Tagesraster */}
-    <div className="absolute inset-0">
+    <div className="absolute left-0 right-0" style={{ top: showResourceCurve ? RESOURCE_H : 0, bottom: 0 }}>
       {days.map((d, i) => (
         <div
           key={`grid-${i}`}
@@ -1375,7 +1752,7 @@ pdf.save(`MultiProzesse_${todayStr}.pdf`);
     </div>
 
     {/* Monatslabels (links im Band) */}
-    <div className="absolute left-0 right-0" style={{ top: 4, height: MONTH_H - 8, pointerEvents: "none" }}>
+    <div className="absolute left-0 right-0" style={{ top: (showResourceCurve ? RESOURCE_H : 0) + 4, height: MONTH_H - 8, pointerEvents: "none" }}>
       {months.map((m, i) => (
         <div
           key={`m-label-${i}`}
@@ -1392,7 +1769,7 @@ pdf.save(`MultiProzesse_${todayStr}.pdf`);
     </div>
 
     {/* KW-Zeile mit Datum von–bis (Mo–So) */}
-    <div className="absolute left-0 right-0" style={{ top: MONTH_H + GAP_H, height: KW_H }}>
+    <div className="absolute left-0 right-0" style={{ top: (showResourceCurve ? RESOURCE_H : 0) + MONTH_H + GAP_H, height: KW_H }}>
       {weeks.map((w, i) => {
         const ws = days[w.idx];
         const we = endOfISOWeek(ws);
@@ -1509,7 +1886,7 @@ pdf.save(`MultiProzesse_${todayStr}.pdf`);
 ) : (
   groups.map((g, rowIdx) => {
     // Lanes packen
-    const { packed, laneCount } = packIntoLanes(g.items, from, to, diffDays);
+    const { packed, laneCount } = packIntoLanes(g.items, from, to, diffWorkdays);
 
 const BAR_H = 28;
 const V_GAP = 6;
@@ -1531,14 +1908,14 @@ const LABEL_X_GAP = 4;          // min. horizontaler Abstand zw. Labels
 const msItems = packed
   .map((it, i) => ({ it, i }))
   .filter(({ it }) => (it.durationDays || 0) === 0)
-  .sort((a, b) => diffDays(from, a.it._sC) - diffDays(from, b.it._sC));
+  .sort((a, b) => diffWorkdays(from, a.it._sC) - diffWorkdays(from, b.it._sC));
 
 // Greedy-Lanes nur für Labels (immer rechts vom Diamanten)
 const msLayout = new Map();   // i -> { lane, left, width }
 const msLaneEnds = [];        // pro Lane: rechtes Ende des letzten Labels
 
 msItems.forEach(({ it, i }) => {
-  const cx = diffDays(from, it._sC) * dayWidth + dayWidth / 2;
+  const cx = diffWorkdays(from, it._sC) * dayWidth + dayWidth / 2;
   const left = cx + MS / 2 + PAD;  // IMMER rechts
   const width = Math.max(LABEL_W_MIN, Math.min(LABEL_W, timelineWidth - left));
   const endX = left + width;
@@ -1559,7 +1936,19 @@ const msBlockH = msLaneCount
   ? msLaneCount * LABEL_H + (msLaneCount - 1) * V_GAP
   : 0;
 
-const rowHeight = Math.max(barsHeight + msBlockH, LABEL_MIN_H);
+// Zusätzliche Höhe basierend auf benötigten Zeilen für Projekt/Bereich links
+const leftPadPX = 16, rightPadPX = 16;
+const availLeftW = Math.max(0, 380 - leftPadPX - rightPadPX);
+try {
+  const titleMeasureCtx = makeMeasureCtx('600 16px -apple-system, Segoe UI, Roboto, Helvetica, Arial');
+  const subMeasureCtx   = makeMeasureCtx('400 13px -apple-system, Segoe UI, Roboto, Helvetica, Arial');
+  const titleLines = wrapLines(g.project || '', availLeftW, titleMeasureCtx);
+  const subLines   = wrapLines(g.area || '', availLeftW, subMeasureCtx);
+  const labelsH    = ROW_PAD * 2 + (titleLines.length || 1) * LABEL_TITLE_LH + (subLines.length ? 4 + subLines.length * 16 : 0);
+  var rowHeight = Math.max(barsHeight + msBlockH, LABEL_MIN_H, labelsH);
+} catch (e) {
+  var rowHeight = Math.max(barsHeight + msBlockH, LABEL_MIN_H);
+}
 
 
 
@@ -1672,8 +2061,8 @@ const rowHeight = Math.max(barsHeight + msBlockH, LABEL_MIN_H);
 
           {/* Prozessbalken (ohne Überlappung, dank Lanes) */}
 {packed.map((it, i) => {
-  const left = Math.max(0, diffDays(from, it._sC)) * dayWidth + 3;
-  const width = Math.max(6, (diffDays(it._sC, it._eC) + 1) * dayWidth - 6);
+  const left = Math.max(0, diffWorkdays(from, it._sC)) * dayWidth + 3;
+  const width = Math.max(6, countWorkdaysInclusive(it._sC, it._eC) * dayWidth - 6);
   const top = ROW_PAD + msBlockH + it._lane * (BAR_H + V_GAP);
 
   // 👉 Meilenstein? (Dauer 0 Tage)
@@ -1681,7 +2070,7 @@ const rowHeight = Math.max(barsHeight + msBlockH, LABEL_MIN_H);
 
 if (isMilestone) {
   const layout = msLayout.get(i); // aus dem Prepass
-  const cx = diffDays(from, it._sC) * dayWidth + dayWidth / 2;
+  const cx = diffWorkdays(from, it._sC) * dayWidth + dayWidth / 2;
 
   // Lane-Top (oberhalb der Balken)
   const msTop = ROW_PAD + (layout ? layout.lane : 0) * (LABEL_H + V_GAP);
@@ -1713,7 +2102,7 @@ if (isMilestone) {
         title={`${it.name}
 ${fmtShort(it.start)} → ${fmtShort(it.end)}
 ${it.trade || ""}
-${(it.responsibles && it.responsibles.length) ? `\nResp: ${it.responsibles.join(", ")}` : ""}`}
+${(it.responsibles && it.responsibles.length) ? `\nResp: ${it.responsibles.join(", ")}` : ""}${(() => { const p = peopleByProcess && it.processId && peopleByProcess[g.project] && peopleByProcess[g.project][it.processId]; if (p == null) return ""; const total = typeof p === 'number' ? p : Object.entries(p).filter(([k]) => k !== "__total__").reduce((s,[,v]) => s + (Number(v)||0), 0); return `\nPersonen (gesamt aus Karten): ${total}`; })()}`}
 
       />
 
@@ -1742,7 +2131,7 @@ ${(it.responsibles && it.responsibles.length) ? `\nResp: ${it.responsibles.join(
           zIndex: 2,
           pointerEvents: "none",
         }}
-        title={`${it.name}\n${fmtShort(it.start)} → ${fmtShort(it.end)}\n${it.trade || ""}`}
+        title={`${it.name}\n${fmtShort(it.start)} → ${fmtShort(it.end)}\n${it.trade || ""}${(() => { const p = peopleByProcess && it.processId && peopleByProcess[g.project] && peopleByProcess[g.project][it.processId]; if (p == null) return ""; const total = typeof p === 'number' ? p : Object.entries(p).filter(([k]) => k !== "__total__").reduce((s,[,v]) => s + (Number(v)||0), 0); return `\nPersonen (gesamt aus Karten): ${total}`; })()}` }
       >
         {it.name}
       </div>
@@ -1771,7 +2160,7 @@ return (
     }}
     title={`${it.name}
 ${fmtShort(it.start)} → ${fmtShort(it.end)}
-${it.trade || ""}${(it.responsibles && it.responsibles.length) ? `\nResp: ${it.responsibles.join(", ")}` : ""}`}
+${it.trade || ""}${(it.responsibles && it.responsibles.length) ? `\nResp: ${it.responsibles.join(", ")}` : ""}${(() => { const p = peopleByProcess && it.processId && peopleByProcess[g.project] && peopleByProcess[g.project][it.processId]; if (p == null) return ""; const total = typeof p === 'number' ? p : Object.entries(p).filter(([k]) => k !== "__total__").reduce((s,[,v]) => s + (Number(v)||0), 0); return `\nPersonen (gesamt aus Karten): ${total}`; })()}`}
   >
     {(() => {
       const hasResp = Array.isArray(it.responsibles) && it.responsibles.length > 0;

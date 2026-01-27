@@ -14,15 +14,17 @@ import AuftragssummenModul from "./AuftragssummenModul";
 import ProzessGruppierungModul from "./ProzessGruppierungModul";
 import GruppenGanttModul from "./GruppenGanttModul";
 import MultiProzesse from "./MultiProzesse";
+import Cashflow from "./Cashflow";
 
 const PROJECT_TABS = {
   progress: { label: "Fortschritt", icon: FaChartBar },
   gantt: { label: "Gantt", icon: FaCalendarAlt },
   tasks: { label: "Tasks", icon: FaTasks },
   milestones: { label: "Milestones", icon: FaFlagCheckered },
-  struktur: { label: "Kosten", icon: FaSitemap },
+  struktur: { label: "Struktur", icon: FaSitemap },
   kosten: { label: "Flächenterminplan", icon: FaSitemap },
   multiProzesse: { label: "6-Wochen Vorschau", icon: FaTasks },
+  cashflow: { label: "Kosten", icon: FaSlidersH },
 }
 // ---- Helper für "Responsibles" (gleich wie im Modul) ------------------------
 const RESPONSIBLE_KEYS = [
@@ -37,14 +39,9 @@ const parseResponsibles = (val) => {
 };
 
 const PROJECTS = [
-  { name: "23338-00; 23339-00; 23340-00 Netzsch Technikum Selb 14.10.2025 - Rev.00 -", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=26f77435-d1ef-4528-871c-2b965af907fb", projectId: "26f77435-d1ef-4528-871c-2b965af907fb" },
-  { name: "23342-00; 23343-00; 23344-00 Knorr Bremse, Aldersbach 18.11.2025 – Vorabzug -", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=6483e85b-a56a-4d9d-a6fd-21d5e82176b0", projectId: "6483e85b-a56a-4d9d-a6fd-21d5e82176b0" },
-  { name: "23347-00 Paulaner Geb.Z10,  München 22.10.2025 - Rev.01 -", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=aad9c879-ccc6-4a0c-9530-fddeea160382", projectId: "aad9c879-ccc6-4a0c-9530-fddeea160382" },
-  { name: "23350-00 BMW Geb. 41.5 Alpina, Dingolfing - 10.11.2025 – Vorabzug -", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=bc490588-7054-4d2f-9a0f-ba6bb3870fda", projectId: "bc490588-7054-4d2f-9a0f-ba6bb3870fda" },
-    { name: "23353-00 Meier Bau, Netto Vilshofen 22.10.2025 - Rev.00 -", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=1a4a0ca8-d1b3-4ab4-ae60-6331b033414f", projectId: "1a4a0ca8-d1b3-4ab4-ae60-6331b033414f" },
-    { name: "23356-00; 23357-00; 23358-00; 23359-00; 23360-00; 23361-00 Markgraf, Lidl Kirchheim - 31.10.2025 – Vorabzug -", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=16c40669-8b0e-4087-aa09-88a92177bdf0", projectId: "16c40669-8b0e-4087-aa09-88a92177bdf0" },
-    { name: "23363-00 Porr BMW Westside, München 30.10.2025 - Rev.00 -", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=56817840-342a-45f8-bbf8-9136eaf7cef1", projectId: "56817840-342a-45f8-bbf8-9136eaf7cef1" },
-    { name: "23365-00 Grossmann Alpma, Rott am Inn 17.11.2025 - Rev.00 -", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=a701a1b5-2176-480c-837b-bff09a5089d5", projectId: "a701a1b5-2176-480c-837b-bff09a5089d5" },
+    { name: "1090 - Mayerstraße", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=ffe2630e-c23c-4b93-85f3-cee98cb2cca1", projectId: "ffe2630e-c23c-4b93-85f3-cee98cb2cca1" },
+    { name: "Wagnerviertel", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=681e1f23-02ae-4f85-80c2-de6b72ecba9a", projectId: "681e1f23-02ae-4f85-80c2-de6b72ecba9a" },
+    { name: "Müllergasse", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=b8eb46b7-a1e2-46c6-9ccc-2d57b0b1be63", projectId: "b8eb46b7-a1e2-46c6-9ccc-2d57b0b1be63" },
 ];
 
 const TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI3N2U3OGMyMC0yNmVhLTQ3OWQtYjIzMS00MGRkNzIxYWZiNDEiLCJlbWFpbCI6ImNocmlzdGlhbi5yZXV0ZXJAbGNtZGlnaXRhbC5jb20iLCJ0cyI6NjQ4LCJsaWMiOnsiZWRpdCI6MX0sImlhdCI6MTc0MTE4MzQ5Mn0.a42tshg1OH8gzYu0AsEaeymx8ebWOdNA2rZzz9rdd1c";
@@ -67,6 +64,97 @@ const fetchData = async () => {
     projectData[project.name] = XLSX.utils.sheet_to_json(sheet);
   }
   return projectData;
+};
+
+// Zusätzliche Karten-Daten (Tasks) laden: &cards=1 → Personen je Prozess-ID und Datum (Date-Spalte)
+const fetchPeopleByProcess = async () => {
+  const byProject = {};
+  for (const project of PROJECTS) {
+    try {
+      const response = await fetch(`${project.url}&cards=1`, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${TOKEN}`,
+          Accept: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        },
+      });
+      const blob = await response.blob();
+      const buf = await blob.arrayBuffer();
+      const wb = XLSX.read(new Uint8Array(buf), { type: "array" });
+      const sheetName = wb.SheetNames[0];
+      const sheet = wb.Sheets[sheetName];
+      const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 }); // Array von Arrays
+
+      // Header-Indices robust ermitteln
+      const header = (rows[0] || []).map(h => String(h || "").trim());
+      const findIdx = (names, fallbackIdx) => {
+        const nameArr = Array.isArray(names) ? names : [names];
+        let idx = -1;
+        for (const n of nameArr) {
+          const i = header.findIndex(h => h.toLowerCase() === String(n).toLowerCase());
+          if (i >= 0) { idx = i; break; }
+        }
+        return idx >= 0 ? idx : fallbackIdx; // Fallback auf bekannte Position
+      };
+
+      const idxProcess = findIdx([
+        "Process Id","ProcessID","ProcessId","Prozess Id","ProzessID","Process GUID","Process Guid","ProcessGUID","ID"
+      ], 9); // bisher 10. Spalte
+      const idxPersons = findIdx(["Persons","Personen","People","Anzahl Personen","Ressourcen","Ressource"], 15); // bisher 16. Spalte
+      const idxDate = findIdx(["Date","Datum","Task Date","Card Date"], -1);
+
+      const map = {}; // processId -> (dateKey -> sum)
+      for (let i = 1; i < rows.length; i++) { // Header überspringen
+        const row = rows[i] || [];
+        const processId = row[idxProcess];
+        if (!processId) continue;
+
+        const personsRaw = row[idxPersons];
+        const num = Number(String(personsRaw ?? "").replace(",", ".").trim());
+        const val = isFinite(num) ? num : null;
+        if (val == null || val === 0) continue;
+
+        let dateKey = null;
+        if (idxDate >= 0) {
+          const dRaw = row[idxDate];
+          if (dRaw != null && dRaw !== "") {
+            // XLSX kann Datum als Excel-Serienzahl liefern; versuchen zu parsen
+            let d;
+            if (typeof dRaw === "number") {
+              // Excel serial date -> JS Date (UTC offset vermeiden)
+              d = XLSX.SSF.parse_date_code(dRaw);
+              if (d) {
+                const y = d.y;
+                const m = String((d.m || 1)).padStart(2, "0");
+                const day = String((d.d || 1)).padStart(2, "0");
+                dateKey = `${y}-${m}-${day}`;
+              }
+            } else {
+              // String -> Date
+              const s = String(dRaw).trim();
+              const parsed = new Date(s);
+              if (!isNaN(parsed)) {
+                const y = parsed.getFullYear();
+                const m = String(parsed.getMonth() + 1).padStart(2, "0");
+                const day = String(parsed.getDate()).padStart(2, "0");
+                dateKey = `${y}-${m}-${day}`;
+              }
+            }
+          }
+        }
+
+        const pid = String(processId);
+        if (!map[pid]) map[pid] = {};
+        // Wenn kein Datum gefunden wurde, auf einen speziellen Schlüssel summieren (Kompatibilität)
+        const key = dateKey || "__total__";
+        map[pid][key] = (map[pid][key] || 0) + val;
+      }
+      byProject[project.name] = map;
+    } catch (e) {
+      byProject[project.name] = {};
+    }
+  }
+  return byProject;
 };
 
 const denseSelectStyles = {
@@ -98,6 +186,7 @@ const denseSelectStyles = {
 const Dashboard = () => {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [peopleByProcess, setPeopleByProcess] = useState(null);
 
   const [mode, setMode] = useState("multi");
   const [activeTab, setActiveTab] = useState("multiProzesse");
@@ -111,14 +200,24 @@ const Dashboard = () => {
   const [filtersOpen, setFiltersOpen] = useState(false);
 
   useEffect(() => {
-    fetchData().then((fetchedData) => {
-      setData(fetchedData);
-      setLoading(false);
-    });
+    (async () => {
+      try {
+        const [fetchedData, peopleMap] = await Promise.all([
+          fetchData(),
+          fetchPeopleByProcess(),
+        ]);
+        setData(fetchedData);
+        setPeopleByProcess(peopleMap);
+      } catch (e) {
+        // ignore
+      } finally {
+        setLoading(false);
+      }
+    })();
   }, []);
 
   const availableTabs = mode === "multi"
-    ? ["progress", "gantt", "tasks", "milestones", "multiProzesse"]
+    ? ["progress", "gantt", "tasks", "milestones", "multiProzesse", "cashflow"]
     : ["struktur", "kosten"];
 
   const alleGewerke = useMemo(() => data
@@ -203,6 +302,18 @@ const Dashboard = () => {
         case "multiProzesse":
           return (
             <MultiProzesse
+              data={data}
+              projects={PROJECTS}
+              selectedProjects={selectedProjects}
+              gewerkFilter={selectedGewerke}
+              bereichFilter={selectedBereiche}
+              responsiblesFilter={selectedResponsibles}
+              peopleByProcess={peopleByProcess}
+            />
+          );
+        case "cashflow":
+          return (
+            <Cashflow
               data={data}
               projects={PROJECTS}
               selectedProjects={selectedProjects}
