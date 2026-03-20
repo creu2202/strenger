@@ -1,5 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { FaCalendarAlt, FaCheck } from "react-icons/fa";
+import { Button } from "./components/ui/button";
+import { Input } from "./components/ui/input";
+import { Label } from "./components/ui/label";
+import { cn } from "./components/ui/utils";
 
 
 // --- Feld-Mapping (inkl. Process & Start/End Date aus deinen Sheets)
@@ -161,6 +165,19 @@ const parseAnyColor = (val) => {
   return parseHex(s) || parseRgb(s) || parseHsl(s) || null;
 };
 
+const darkenColor = (color, percent) => {
+  const parsed = parseAnyColor(color);
+  if (!parsed) return "#333333";
+  const f = 1 - percent / 100;
+  return `rgb(${Math.round(parsed.r * f)}, ${Math.round(parsed.g * f)}, ${Math.round(parsed.b * f)})`;
+};
+
+const getLightColor = (type, baseColor) => {
+  const parsed = parseAnyColor(baseColor);
+  if (!parsed) return "rgba(0, 0, 0, 0.05)";
+  return `rgba(${parsed.r}, ${parsed.g}, ${parsed.b}, 0.15)`;
+};
+
 const blendOverWhite = ({ r, g, b, a }) => {
   if (a === undefined || a >= 1) return { r, g, b };
   // Modul-Hintergrund ist weiß → mit Weiß mischen
@@ -284,6 +301,7 @@ export default function Cashflow({
   gewerkFilter = [],
   bereichFilter = [],
   responsiblesFilter = [],          // <— NEU
+  searchTerm = "",
 }) {
   const today = startOfDay(new Date());
 
@@ -421,9 +439,11 @@ export default function Cashflow({
 );
 
 const normalizedResponsiblesFilter = useMemo(                 // <— NEU
-  () => (responsiblesFilter || []).map(r => String(r).toLowerCase().trim()),
-  [responsiblesFilter]
-);
+    () => (responsiblesFilter || []).map(r => String(r).toLowerCase().trim()),
+    [responsiblesFilter]
+  );
+
+  const normalizedSearchTerm = useMemo(() => searchTerm?.toLowerCase().trim(), [searchTerm]);
 
   const [dayWidth, setDayWidth] = useState(14); // px pro Tag – wird dynamisch berechnet, um Breite auszufüllen
   const totalDays = Math.max(1, diffDays(from, to) + 1);
@@ -1119,13 +1139,31 @@ if (durationDays == null) {
     if (!hit) continue;
   }
 
-  if (normalizedBereichFilter.length > 0) {
-    const areaLower = String(area).toLowerCase();
-    const hit = normalizedBereichFilter.some(sel => areaLower === sel || areaLower.includes(sel));
-    if (!hit) continue;
-  }
+    if (normalizedBereichFilter.length > 0) {
+      const areaLower = String(area).toLowerCase();
+      const hit = normalizedBereichFilter.some(sel => areaLower === sel || areaLower.includes(sel));
+      if (!hit) continue;
+    }
 
-  // Gruppe & Push
+    // --- GLOBALER SEARCH FILTER ---
+    if (normalizedSearchTerm) {
+      const nameLower = name.toLowerCase();
+      const tradeLower = trade.toLowerCase();
+      const areaLower = String(area).toLowerCase();
+      const respLower = responsibles.map(r => r.toLowerCase());
+      const projLower = projName.toLowerCase();
+
+      const hit = 
+        nameLower.includes(normalizedSearchTerm) ||
+        tradeLower.includes(normalizedSearchTerm) ||
+        areaLower.includes(normalizedSearchTerm) ||
+        projLower.includes(normalizedSearchTerm) ||
+        respLower.some(r => r.includes(normalizedSearchTerm));
+      
+      if (!hit) continue;
+    }
+
+    // Gruppe & Push
   const key = `${projName} :: ${area}`;
   if (!map.has(key)) map.set(key, { key, project: projName, area, items: [] });
 
@@ -1166,7 +1204,7 @@ const months = useMemo(() => {
   const out = [];
   days.forEach((d, i) => {
     const key = `${d.getFullYear()}-${d.getMonth()}`;
-    const label = d.toLocaleDateString("de-DE", { month: "long", year: "numeric" });
+    const label = d.toLocaleDateString("de-DE", { month: "short" });
     const last = out[out.length - 1];
     if (!last || last.key !== key) {
       out.push({ key, label, startIdx: i, endIdx: i, startDate: d, endDate: d });
@@ -1179,8 +1217,31 @@ const months = useMemo(() => {
   return out.map(m => ({ ...m, span: m.endIdx - m.startIdx + 1 }));
 }, [days]);
 
+// Quartalssegmente für den Header
+const quarters = useMemo(() => {
+  const out = [];
+  days.forEach((d, i) => {
+    const q = Math.floor(d.getMonth() / 3) + 1;
+    const key = `${d.getFullYear()}-Q${q}`;
+    const last = out[out.length - 1];
+    if (!last || last.key !== key) {
+      out.push({
+        key,
+        qLabel: `Q${q}`,
+        yearLabel: d.getFullYear().toString(),
+        startIdx: i,
+        endIdx: i
+      });
+    } else {
+      last.endIdx = i;
+    }
+  });
+  return out.map(q => ({ ...q, span: q.endIdx - q.startIdx + 1 }));
+}, [days]);
+
 // Für Trenner (Index 0,7,14,... wo ein Monat beginnt)
 const monthBoundaries = useMemo(() => months.map(m => m.startIdx), [months]);
+const quarterBoundaries = useMemo(() => quarters.map(q => q.startIdx), [quarters]);
 
 // Monats-Summen: Summe der Zahlungen, die im jeweiligen Monat stattfinden
     const monthPayTotals = useMemo(() => {
@@ -1257,10 +1318,10 @@ const weeks = useMemo(
   [days]
 );
 
-const MONTH_H = 28;   // Höhe der Monatschips
-const KW_H    = 18;   // Höhe der KW-Zeile
-const GAP_H   = 6;    // Abstand zwischen den Zeilen
-const headerH = MONTH_H + KW_H + GAP_H;
+const MONTH_H = 34;   // Obere Header-Zeile (Quartal/Jahr)
+const KW_H    = 34;   // Untere Header-Zeile (Monate)
+const GAP_H   = 0;    // Kein Abstand mehr
+const headerH = MONTH_H + KW_H;
 
 // Text-Zeilenhöhe links (px)
 const LABEL_TITLE_LH = 20;  // etwa leading-5
@@ -1345,7 +1406,7 @@ function sx(el, attrs) {
 function tnode(text) { return document.createTextNode(text); }
 
 // ===== Mehrzeiliger Text im SVG (tspan) =====
-function makeMeasureCtx(font = '600 16px -apple-system, Segoe UI, Roboto, Helvetica, Arial') {
+function makeMeasureCtx(font = '600 16px Inter, sans-serif') {
   const c = document.createElement('canvas');
   const ctx = c.getContext('2d');
   ctx.font = font;
@@ -1498,7 +1559,7 @@ async function handleExportPDF() {
   const defs = document.createElementNS(svgNS, "defs");
   const style = document.createElementNS(svgNS, "style");
   style.appendChild(tnode(`
-    text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji","Segoe UI Symbol"; }
+    text { font-family: Inter, sans-serif; }
     .small { font-size: 11px; fill: #475569; }
     .tiny  { font-size: 10px; fill: #475569; }
     .label-strong { font-weight: 600; fill: #0f172a; }
@@ -1548,7 +1609,7 @@ async function handleExportPDF() {
   }));
 
 // --- Monatslabels (Pill nur so breit wie der Text) ---
-const MONTH_LABEL_FONT = '700 12px -apple-system, Segoe UI, Roboto, Helvetica, Arial';
+const MONTH_LABEL_FONT = '700 12px Inter, sans-serif';
 const monthMeasure = makeMeasureCtx(MONTH_LABEL_FONT);
 
 months.forEach((m) => {
@@ -1580,7 +1641,7 @@ months.forEach((m) => {
    x: 10, y: midY(0, pillH, 12),
     "font-size": "12",
     "font-weight": "700",
-    "font-family": '-apple-system, Segoe UI, Roboto, Helvetica, Arial',
+    "font-family": 'Inter, sans-serif',
     fill: "#0f172a"
   });
   t.appendChild(tnode(text));
@@ -1617,7 +1678,7 @@ const t1 = sx(document.createElementNS(svgNS, "text"), {
   "dominant-baseline": "middle",
   "font-size": "11",
   "font-weight": "700",
-  "font-family": '-apple-system, Segoe UI, Roboto, Helvetica, Arial',
+  "font-family": 'Inter, sans-serif',
   fill: "#0f172a"
 });
 t1.appendChild(tnode(`KW ${w.no}`));
@@ -1630,7 +1691,7 @@ const t2 = sx(document.createElementNS(svgNS, "text"), {
   "dominant-baseline": "middle",
   "font-size": "11",
   "font-weight": "400",
-  "font-family": '-apple-system, Segoe UI, Roboto, Helvetica, Arial',
+  "font-family": 'Inter, sans-serif',
   fill: "#475569"
 });
 t2.appendChild(tnode(`${fmtDM(ws)} – ${fmtDM(we)}`));
@@ -1676,7 +1737,7 @@ g.appendChild(t2);
   const maxH      = rowHeight - ROW_PAD * 2;     // nutzbare Höhe in der Zelle
 
   // Titel (Projekt)
-  const titleFontMeasure = '600 16px -apple-system, Segoe UI, Roboto, Helvetica, Arial';
+  const titleFontMeasure = '600 16px Inter, sans-serif';
   const titleLH = 20; // px
   const usedH1 = drawWrappedSvgText({
     parent: svg,
@@ -1691,7 +1752,7 @@ g.appendChild(t2);
   });
 
   // Sub (Bereichspfad) – bekommt den restlichen Platz
-  const subFontMeasure = '400 13px -apple-system, Segoe UI, Roboto, Helvetica, Arial';
+  const subFontMeasure = '400 13px Inter, sans-serif';
   const subLH = 16; // px
   const remainingH = Math.max(0, maxH - usedH1 - 4);
 
@@ -1829,9 +1890,7 @@ const txt = sx(document.createElementNS(svgNS, "text"), {
 txt.setAttribute("fill", textColorForBg(it.color));          // Farbe aus Kontrastfunktion
 txt.setAttribute("font-size", "12");
 txt.setAttribute("font-weight", "600");
-txt.setAttribute("font-family",
-  '-apple-system, Segoe UI, Roboto, Helvetica, Arial'
-);
+txt.setAttribute("font-family", "Inter, sans-serif");
 
 txt.appendChild(tnode(it.name));
 gClip.appendChild(txt);
@@ -2137,102 +2196,76 @@ pdf.save(`Cashflow_${todayStr}.pdf`);
       }}
     >
       {/* Header links (sticky) */}
-      <div className="sticky top-0 left-0 z-20 bg-slate-50 px-4 py-3 text-[11px] leading-none uppercase tracking-wide text-slate-600 border-b border-r border-slate-200" data-pdf-text>
+      <div 
+        className="sticky top-0 left-0 z-20 bg-slate-50 px-4 flex items-center text-[11px] leading-none uppercase tracking-wide text-slate-600 border-b border-r border-slate-200" 
+        style={{ height: headerH }}
+        data-pdf-text
+      >
         Projekt / Bereich
       </div>
 
       {/* Header rechts: Kalenderleiste */}
-{/* Header rechts: Kalenderleiste (zweizeilig, hell, ohne Overlap) */}
-{/* Header rechts: Kalenderleiste (Monate mit Trennern + KW-Chips mit Datum) */}
-<div className="sticky top-0 z-20 bg-white border-b border-slate-200 shadow-sm">
-  <div className="relative" style={{ height: headerH }}>
+      {/* Header rechts: Kalenderleiste (zweizeilig, hell, exakt wie Screenshot) */}
+      <div className="sticky top-0 z-20 border-b border-slate-300 shadow-sm" style={{ backgroundColor: "#f1f3f8" }}>
+        <div className="relative" style={{ height: headerH }}>
 
-    {/* Monats-Hintergrundbänder (sehr dezent) */}
-    <div className="absolute inset-0 -z-10">
-      {months.map((m, i) => (
-        <div
-          key={`mon-bg-${i}`}
-          className="absolute"
-          style={{
-            left: m.startIdx * dayWidth,
-            width: m.span * dayWidth,
-            top: 0,
-            bottom: 0,
-            background:
-              i % 2 === 0
-                ? "linear-gradient(180deg, rgba(148,163,184,0.10), rgba(148,163,184,0.03))"
-                : "linear-gradient(180deg, rgba(148,163,184,0.06), rgba(148,163,184,0.02))",
-          }}
-        />
-      ))}
-    </div>
-
-    {/* Raster: nur Wochen- und Monatstrenner, keine Tageslinien mehr */}
-    <div className="absolute inset-0">
-      {/* Montags-Linien */}
-      {weeks.map((w) => (
-        <div
-          key={`wkline-${w.idx}`}
-          className="absolute top-0 bottom-0"
-          style={{ left: w.idx * dayWidth, borderLeft: "2px solid #cbd5e1" }}
-        />
-      ))}
-      {/* Monats-Trenner (dicker, über allem Raster) */}
-      {monthBoundaries.map((idx) => (
-        <div
-          key={`mline-${idx}`}
-          className="absolute top-0 bottom-0 month-divider"
-          style={{ left: idx * dayWidth }}
-        />
-      ))}
-      {/* Heute-Marke */}
-      <div className="absolute top-0 bottom-0 border-l-2 border-rose-500" style={{ left: todayOffset }} title="Heute" />
-    </div>
-
-    {/* Monatslabels (links im Band) */}
-    <div className="absolute left-0 right-0" style={{ top: 4, height: MONTH_H - 8, pointerEvents: "none" }}>
-      {months.map((m, i) => (
-        <div
-          key={`m-label-${i}`}
-          className="absolute flex items-center"
-          style={{
-            left: m.startIdx * dayWidth + 6,
-            width: Math.max(80, m.span * dayWidth - 12),
-            height: MONTH_H - 8,
-          }}
-        >
-          <span className="month-label">{m.label}</span>
-        </div>
-      ))}
-    </div>
-
-    {/* KW-Zeile mit Datum von–bis (Mo–So) */}
-    <div className="absolute left-0 right-0" style={{ top: MONTH_H + GAP_H, height: KW_H }}>
-      {weeks.map((w, i) => {
-        const ws = days[w.idx];
-        const we = endOfISOWeek(ws);
-        return (
-          <div
-            key={`kw-${w.idx}`}
-            className="absolute kw-chip"
-            style={{
-              left: w.idx * dayWidth + 4,
-              top: 0,
-              // Breite clampen, damit der letzte KW-Chip nicht über die Timeline hinausragt
-              width: Math.max(0, Math.min(dayWidth * 7 - 8, (timelineWidth - (w.idx * dayWidth + 4)) - 4)),
-              height: KW_H,
-            }}
-          >
-            <span className="kw-badge">KW&nbsp;{w.no}</span>
-            <span className="kw-range">
-              {fmtDM(ws)}&nbsp;–&nbsp;{fmtDM(we)}
-            </span>
+          {/* Raster im Header */}
+          <div className="absolute inset-0">
+            {/* Quartals-Trenner */}
+            {quarterBoundaries.map((idx) => (
+              <div
+                key={`qline-h-${idx}`}
+                className="absolute top-0 bottom-0"
+                style={{ left: idx * dayWidth, borderLeft: "1px solid #cbd5e1" }}
+              />
+            ))}
+            {/* Monats-Trenner (nur in der unteren Zeile sichtbar durch Layout) */}
+            {monthBoundaries.map((idx) => (
+              <div
+                key={`mline-h-${idx}`}
+                className="absolute"
+                style={{ left: idx * dayWidth, top: MONTH_H, bottom: 0, borderLeft: "1px solid #cbd5e1" }}
+              />
+            ))}
           </div>
-        );
-      })}
-    </div>
-  </div>
-</div>
+
+          {/* Obere Zeile: Quartale & Jahre */}
+          <div className="absolute left-0 right-0 border-b border-slate-300" style={{ top: 0, height: MONTH_H }}>
+            {quarters.map((q, i) => (
+              <div
+                key={`q-label-${i}`}
+                className="absolute flex items-center px-3 h-full"
+                style={{
+                  left: q.startIdx * dayWidth,
+                  width: q.span * dayWidth,
+                }}
+              >
+                <span className="font-bold text-[14px] text-slate-900">{q.qLabel}</span>
+                <span className="text-[12px] text-slate-600 ml-auto">{q.yearLabel}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Untere Zeile: Monate */}
+          <div className="absolute left-0 right-0" style={{ top: MONTH_H, height: KW_H }}>
+            {months.map((m, i) => (
+              <div
+                key={`m-label-${i}`}
+                className="absolute flex items-center px-3 h-full"
+                style={{
+                  left: m.startIdx * dayWidth,
+                  width: m.span * dayWidth,
+                }}
+              >
+                <span className="text-[12px] text-slate-700">{m.label}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Heute-Marke im Header */}
+          <div className="absolute top-0 bottom-0 border-l-2 border-rose-500 z-30" style={{ left: todayOffset }} />
+        </div>
+      </div>
 
 
 <style>{`
@@ -2256,54 +2289,11 @@ pdf.save(`Cashflow_${todayStr}.pdf`);
   }
 
 .month-divider{
-  border-left: 3px solid #94a3b8; /* slate-400 */
-  box-shadow: 0 0 0 1px rgba(0,0,0,0.02);
-  opacity: 0.9;
+  border-left: 1px solid #cbd5e1;
 }
 
-.month-label{
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: .06em;
-  text-transform: uppercase;
-  padding: 3px 10px;
-  border-radius: 9999px;
-  color: #0f172a; /* slate-900 */
-  background: #ffffff; /* solide, keine Linien durchscheinen */
-  border: 1px solid rgba(148,163,184,0.45);
-  box-shadow: 0 1px 0 rgba(0,0,0,0.04);
-}
-
-.kw-chip{
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 11px;
-  color: #334155; /* slate-700 etwas dunkler für Lesbarkeit */
-  padding: 0 8px;
-  border-radius: 10px;
-  background: #ffffff; /* solide, keine Linien durchscheinen */
-  border: 1px solid rgba(100,116,139,0.35);
-  box-shadow: 0 1px 1px rgba(0,0,0,0.06);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.kw-badge{
-  font-weight: 800;
-  letter-spacing: .03em;
-  text-transform: uppercase;
-  padding: 2px 6px;
-  border-radius: 9999px;
-  border: 1px solid rgba(100,116,139,0.35);
-  background: linear-gradient(180deg, rgba(241,245,249,0.95), rgba(226,232,240,0.8));
-  color: #0f172a;
-}
-
-.kw-range{
-  font-variant-numeric: tabular-nums;
-  opacity: .9;
+.month-label, .kw-chip, .kw-badge, .kw-range {
+  display: none !important;
 }
 
 
@@ -2330,7 +2320,6 @@ pdf.save(`Cashflow_${todayStr}.pdf`);
               width: m.span * dayWidth,
               top: 0,
               bottom: 0,
-              borderLeft: "1px solid #e5e7eb"
             }}
             title={`${m.label}: ${formatEuro(monthPayTotals[i]?.value ?? 0)}` }
           >
@@ -2713,13 +2702,6 @@ procSeparators = Array.from(new Set(procSeparators)).sort((a,b)=>a-b);
             />
           ))}
 
-           {/* kein Tagesraster mehr in den Zeilen */}
-
-          {/* Heute-Linie */}
-          <div
-            className="absolute top-0 bottom-0 border-l-2 border-[#ff5a5f]"
-            style={{ left: todayOffset }}
-          />
 
           {/* Monats-Trenner in der Row */}
           {monthBoundaries.map((idx) => (
@@ -2730,9 +2712,15 @@ procSeparators = Array.from(new Set(procSeparators)).sort((a,b)=>a-b);
             />
           ))}
 
+          {/* Heute-Linie */}
+          <div
+            className="absolute top-0 bottom-0 border-l-2 border-[#ff5a5f] z-10"
+            style={{ left: todayOffset }}
+          />
+
           {/* Prozess-Separators (nur wenn Aufträge vorhanden) */}
           {procSeparators.map((y, si) => (
-            <div key={`rsep-${rowIdx}-${si}`} className="absolute" style={{ left: 0, right: 0, top: y, height: 1, background: "#e5e7eb", pointerEvents: "none" }} />
+            <div key={`rsep-${rowIdx}-${si}`} className="absolute" style={{ left: 0, right: 0, top: y, height: 1, background: "#e5e7eb", pointerEvents: "none", zIndex: 1 }} />
           ))}
 
           {/* Prozessbalken (ohne Überlappung, dank Lanes) */}
@@ -2743,58 +2731,102 @@ procSeparators = Array.from(new Set(procSeparators)).sort((a,b)=>a-b);
   const layout = msLayout.get(i); // aus dem Prepass
   const cx = diffDays(from, it._sC) * dayWidth + dayWidth / 2;
   const msTop = ROW_PAD + (layout ? layout.lane : 0) * (LABEL_H + V_GAP);
-  const parsed = typeof parseAnyColor === "function" ? parseAnyColor(it.color) : null;
-  const pillBg = parsed ? `rgba(${parsed.r},${parsed.g},${parsed.b},0.12)` : "rgba(0,0,0,0.06)";
-  const pillBorder = parsed ? `rgba(${parsed.r},${parsed.g},${parsed.b},0.35)` : "rgba(0,0,0,0.1)";
+
+  const isDone = it.done || it.status === 1 || it.progress === 100;
+  const isOverdue = !isDone && it._sC < today;
+  const type = isDone ? "completed" : (isOverdue ? "overdue" : "upcoming");
+
+  const outerDiamondColor = it.color || "#3fbcf0"; 
+  const innerDiamondColor = darkenColor(outerDiamondColor, 30); 
+  const pillBgColor = getLightColor(type, outerDiamondColor); 
+
   const pillLeft  = layout ? layout.left  : (cx + MS / 2 + PAD);
   const pillWidth = layout ? layout.width : Math.max(LABEL_W_MIN, Math.min(LABEL_W, timelineWidth - (cx + MS / 2 + PAD)));
+
   return (
     <div key={`ms-${rowIdx}-${i}`}>
+      {/* Pill Container */}
       <div
         className="absolute"
         style={{
-          left: cx - MS / 2,
-          top:  msTop + (LABEL_H - MS) / 2,
-          width: MS,
-          height: MS,
-          backgroundColor: it.color,
-          transform: "rotate(45deg)",
-          borderRadius: 3,
-          boxShadow: "0 0 0 2px #fff inset, 0 0 0 1px rgba(0,0,0,0.1)",
-          zIndex: 3,
-        }}
-        title={`${it.name}
-${fmtShort(it.start)} → ${fmtShort(it.end)}
-${it.trade || ""}
-${(it.responsibles && it.responsibles.length) ? `\nResp: ${it.responsibles.join(", ")}` : ""}`}
-      />
-      <div
-        className="absolute"
-        style={{
-          left:  pillLeft,
+          left:  cx,
           top:   msTop,
           width: pillWidth,
           height: LABEL_H,
-          display: "flex",
-          alignItems: "center",
-          lineHeight: `${LABEL_H}px`,
-          padding: "0 10px",
-          borderRadius: 9999,
-          background: pillBg,
-          border: `1px solid ${pillBorder}`,
-          color: "#111",
-          fontWeight: 700,
-          fontSize: 13,
-          whiteSpace: "nowrap",
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          boxShadow: "0 0 0 1px rgba(0,0,0,0.03)",
+          background: pillBgColor,
+          borderRadius: 6,
           zIndex: 2,
           pointerEvents: "none",
         }}
-        title={`${it.name}\n${fmtShort(it.start)} → ${fmtShort(it.end)}\n${it.trade || ""}`}
+      />
+
+      {/* Label Text */}
+      <div
+        className="absolute"
+        style={{
+          left:  cx + 24,
+          top:   msTop,
+          width: pillWidth - 24,
+          height: LABEL_H,
+          display: "flex",
+          alignItems: "center",
+          color: "black",
+          fontWeight: 600,
+          fontSize: 11,
+          fontFamily: "Inter, sans-serif",
+          whiteSpace: "nowrap",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          zIndex: 3,
+          pointerEvents: "none",
+        }}
       >
         {it.name}
+      </div>
+
+      {/* Diamond (Raute) */}
+      <div
+        className="absolute flex items-center justify-center"
+        style={{
+          left: cx - 9,
+          top:  msTop + (LABEL_H - 18) / 2,
+          width: 18,
+          height: 18,
+          backgroundColor: outerDiamondColor,
+          transform: "rotate(45deg)",
+          borderRadius: 4,
+          zIndex: 4,
+        }}
+        title={`${it.name}\n${fmtShort(it.start)} → ${fmtShort(it.end)}\n${it.trade || ""}`}
+      >
+        {/* Inner Diamond & Icon */}
+        <div
+          className="flex items-center justify-center"
+          style={{
+            width: 15,
+            height: 15,
+            backgroundColor: innerDiamondColor,
+            borderRadius: 3,
+            transform: "rotate(0deg)", // bleibt relativ zur äußeren Raute
+          }}
+        >
+          {/* Icons (nicht rotieren, damit sie gerade stehen) */}
+          <div style={{ transform: "rotate(-45deg)", display: "flex", alignItems: "center", justifyCenter: "center" }}>
+            {type === "completed" && (
+               <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
+                 <path d="M 2 6 L 5 9 L 10 3" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+               </svg>
+            )}
+            {type === "overdue" && (
+              <span style={{ color: "white", fontSize: "12px", fontWeight: "900", fontFamily: "Inter, sans-serif" }}>!</span>
+            )}
+            {type !== "completed" && type !== "overdue" && (
+              <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
+                <circle cx="6" cy="6" r="4" stroke="white" strokeWidth="1.5" />
+              </svg>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -2889,7 +2921,7 @@ ${it.trade || ""}${(it.responsibles && it.responsibles.length) ? `\nResp: ${it.r
               )}
               {it.done && (
                 <div className="absolute" style={{ right: GAP, top: (BAR_H - BADGE) / 2, width: BADGE, height: BADGE, borderRadius: 9999, background: "rgba(255,255,255,0.85)", boxShadow: "0 1px 2px rgba(0,0,0,0.2), 0 0 0 1px rgba(0,0,0,0.04)", display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }} aria-hidden="true">
-                  <FaCheck style={{ width: 12, height: 12, color: parseAnyColor(it.color) ? it.color : "#16a34a" }} />
+                  <FaCheck style={{ width: 12, height: 12, color: textColorForBg(it.color) === "#fff" ? "#16a34a" : "#15803d" }} />
                 </div>
               )}
             </>
@@ -2914,15 +2946,32 @@ ${it.trade || ""}${(it.responsibles && it.responsibles.length) ? `\nResp: ${it.r
 
       {/* Modal: Auftrag anlegen/bearbeiten */}
       {modalOpen && (
-        <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center">
-          <div className="bg-[#1a1a1a] text-white p-6 rounded-lg w-full max-w-2xl shadow-xl">
-            <div className="text-lg font-semibold mb-1">{batchMode ? "Auftrag für mehrere Vorgänge" : ((editingIndex != null && editingIndex >= 0) ? "Auftrag bearbeiten" : "Neuen Auftrag anlegen")}</div>
-            <div className="text-xs text-gray-400 mb-4">{batchMode ? `Auswahl: ${batchList.length} Vorgänge` : ""}</div>
+        <div className="fixed inset-0 bg-black/40 z-[100] flex items-center justify-center backdrop-blur-sm">
+          <div className="bg-white text-slate-950 p-6 rounded-lg w-full max-w-2xl shadow-2xl border">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <div className="text-xl font-semibold tracking-tight">
+                  {batchMode ? "Auftrag für mehrere Vorgänge" : ((editingIndex != null && editingIndex >= 0) ? "Auftrag bearbeiten" : "Neuen Auftrag anlegen")}
+                </div>
+                {batchMode && (
+                  <div className="text-sm text-muted-foreground mt-1">
+                    Auswahl: {batchList.length} Vorgänge
+                  </div>
+                )}
+              </div>
+              <button 
+                onClick={() => setModalOpen(false)}
+                className="text-muted-foreground hover:text-slate-950 transition-colors"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>
+              </button>
+            </div>
+
             {!batchMode && (
-              <div className="text-sm text-gray-300 mb-4">
-                Vorgang: <span className="font-medium text-white">{selectedProcCtx?.procName || "–"}</span>
+              <div className="text-sm bg-slate-50 border rounded-md p-3 mb-6 text-slate-600">
+                Vorgang: <span className="font-semibold text-slate-900">{selectedProcCtx?.procName || "–"}</span>
                 {Number.isFinite(Number(selectedProcCtx?.durationDays)) && Number(selectedProcCtx?.durationDays) > 0 ? (
-                  <span> · Dauer: <span className="font-medium">{Number(selectedProcCtx.durationDays)} AT</span></span>
+                  <span> · Dauer: <span className="font-semibold text-slate-900">{Number(selectedProcCtx.durationDays)} AT</span></span>
                 ) : null}
               </div>
             )}
@@ -2933,11 +2982,13 @@ ${it.trade || ""}${(it.responsibles && it.responsibles.length) ? `\nResp: ${it.r
               const list = selectedProcCtx ? getOrdersFor({ key: selectedProcCtx.groupKey }, { name: selectedProcCtx.procName, start: selectedProcCtx.start, end: selectedProcCtx.end }) : [];
               if (!list.length) return null;
               return (
-                <div className="mb-4 p-3 rounded bg-[#242424] border border-white/5">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="font-medium">Bestehende Aufträge ({list.length})</div>
-                    <button
-                      className="px-2 py-1 text-xs rounded bg-[#00e0d6] text-black"
+                <div className="mb-6 p-4 rounded-md bg-slate-50 border">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="text-sm font-semibold">Bestehende Aufträge ({list.length})</div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 text-xs"
                       onClick={() => {
                         setEditingIndex(-1);
                         const defPays = selectedProcCtx?.end ? [{ datum: selectedProcCtx.end, betrag: Number("") || 0 }] : [];
@@ -2946,21 +2997,20 @@ ${it.trade || ""}${(it.responsibles && it.responsibles.length) ? `\nResp: ${it.r
                       }}
                     >
                       Neuer Auftrag
-                    </button>
+                    </Button>
                   </div>
                   <div className="grid gap-2">
                     {list.map((o, idx) => (
-                      <div key={idx} className={`flex items-center justify-between px-3 py-2 rounded ${editingIndex===idx?"bg-[#2e2e2e]":"bg-[#1f1f1f]"}`}>
-                        <div className="text-sm truncate">
-                          <span className="text-white/90 font-medium">{o.lieferant || "–"}</span>
-                          <span className="text-white/60"> · {formatEuro(o.plankosten)}</span>
-                          {Array.isArray(o.zahlungen) && o.zahlungen.length>0 && (
-                            <span className="text-white/50"> · {o.zahlungen.length} Zahlung{o.zahlungen.length>1?"en":""}</span>
-                          )}
+                      <div key={idx} className={cn("flex items-center justify-between px-3 py-2 rounded-md border text-sm transition-colors", editingIndex === idx ? "bg-white border-primary/50 shadow-sm" : "bg-white/50 border-transparent")}>
+                        <div className="truncate pr-4">
+                          <span className="font-medium text-slate-900">{o.lieferant || "–"}</span>
+                          <span className="text-muted-foreground ml-2">({formatEuro(o.plankosten)})</span>
                         </div>
                         <div className="flex items-center gap-2">
-                          <button
-                            className="px-2 py-1 text-xs rounded bg-[#e2e8f0] text-[#0f172a]"
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 text-xs"
                             onClick={() => {
                               setEditingIndex(idx);
                               setForm({
@@ -2974,12 +3024,13 @@ ${it.trade || ""}${(it.responsibles && it.responsibles.length) ? `\nResp: ${it.r
                               });
                               setZahlungsart((o.zahlungen && o.zahlungen.length > 1) ? "mehrfach" : "einmalig");
                             }}
-                          >Bearbeiten</button>
-                          <button
-                            className="px-2 py-1 text-xs rounded bg-red-600 text-white"
-                            title="Auftrag löschen"
+                          >Bearbeiten</Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 text-xs text-destructive hover:text-destructive hover:bg-destructive/10"
                             onClick={() => deleteAuftrag(idx)}
-                          >Löschen</button>
+                          >Löschen</Button>
                         </div>
                       </div>
                     ))}
@@ -2988,92 +3039,130 @@ ${it.trade || ""}${(it.responsibles && it.responsibles.length) ? `\nResp: ${it.r
               );
             })()}
 
-            <div className="grid gap-3">
-              <label className="text-sm font-medium">
-                Lieferant
-                <input type="text" value={form.lieferant} onChange={e=>setForm({...form, lieferant:e.target.value})} className="mt-1 p-2 w-full rounded bg-[#333] text-white" />
-              </label>
-              <label className="text-sm font-medium">
-                SPE / Position
-                <input type="text" value={form.spe} onChange={e=>setForm({...form, spe:e.target.value})} className="mt-1 p-2 w-full rounded bg-[#333] text-white" />
-              </label>
-              <div className="grid grid-cols-2 gap-3">
-                <label className="text-sm font-medium">
-                  Bestellnummer
-                  <input type="text" value={form.bestellnummer} onChange={e=>setForm({...form, bestellnummer:e.target.value})} className="mt-1 p-2 w-full rounded bg-[#333] text-white" />
-                </label>
-                <label className="text-sm font-medium">
-                  Auftragsnummer SAP
-                  <input type="text" value={form.auftragsnummer} onChange={e=>setForm({...form, auftragsnummer:e.target.value})} className="mt-1 p-2 w-full rounded bg-[#333] text-white" />
-                </label>
+            <div className="grid gap-4">
+              <div className="grid gap-1.5">
+                <Label htmlFor="lieferant">Lieferant</Label>
+                <Input 
+                  id="lieferant"
+                  placeholder="Name des Lieferanten"
+                  value={form.lieferant} 
+                  onChange={e=>setForm({...form, lieferant:e.target.value})} 
+                />
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <label className="text-sm font-medium">
-                  Plan-Kosten (€)
-                  <input type="text" value={form.plankosten} onChange={e=>setForm({...form, plankosten:e.target.value})} onBlur={e=>setForm({...form, plankosten: String(parseEuro(e.target.value))})} className="mt-1 p-2 w-full rounded bg-[#333] text-white" />
-                </label>
-                <label className="text-sm font-medium">
-                  Ist-Kosten (€)
-                  <input type="text" value={formatEuro(form.istkosten)} readOnly className="mt-1 p-2 w-full rounded bg-[#333] text-white opacity-70" />
-                </label>
+              <div className="grid gap-1.5">
+                <Label htmlFor="spe">SPE / Position</Label>
+                <Input 
+                  id="spe"
+                  placeholder="SPE / Position angeben"
+                  value={form.spe} 
+                  onChange={e=>setForm({...form, spe:e.target.value})} 
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-1.5">
+                  <Label htmlFor="bestellnummer">Bestellnummer</Label>
+                  <Input 
+                    id="bestellnummer"
+                    placeholder="Bestellnummer"
+                    value={form.bestellnummer} 
+                    onChange={e=>setForm({...form, bestellnummer:e.target.value})} 
+                  />
+                </div>
+                <div className="grid gap-1.5">
+                  <Label htmlFor="auftragsnummer">Auftragsnummer SAP</Label>
+                  <Input 
+                    id="auftragsnummer"
+                    placeholder="SAP Nummer"
+                    value={form.auftragsnummer} 
+                    onChange={e=>setForm({...form, auftragsnummer:e.target.value})} 
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-1.5">
+                  <Label htmlFor="plankosten">Plan-Kosten (€)</Label>
+                  <Input 
+                    id="plankosten"
+                    placeholder="0,00"
+                    value={form.plankosten} 
+                    onChange={e=>setForm({...form, plankosten:e.target.value})} 
+                    onBlur={e=>setForm({...form, plankosten: String(parseEuro(e.target.value))})} 
+                  />
+                </div>
+                <div className="grid gap-1.5">
+                  <Label htmlFor="istkosten">Ist-Kosten (€)</Label>
+                  <Input 
+                    id="istkosten"
+                    value={formatEuro(form.istkosten)} 
+                    readOnly 
+                    className="bg-slate-50 text-muted-foreground cursor-not-allowed"
+                  />
+                </div>
               </div>
 
               {batchMode && (
-                <div className="my-3 p-3 rounded bg-[#2a2a2a]">
-                  <div className="mb-2 font-medium">Prozentuale Verteilung je Vorgang</div>
-                  <div className="text-xs text-white/70 mb-2">Passe hier die Anteile in % an. Die Summe wird auf 100% normalisiert.</div>
-                  <div className="grid gap-2">
+                <div className="mt-2 p-4 rounded-md border bg-slate-50/50">
+                  <div className="mb-1 font-semibold text-sm">Prozentuale Verteilung je Vorgang</div>
+                  <div className="text-xs text-muted-foreground mb-4">Passe hier die Anteile in % an. Die Summe wird auf 100% normalisiert.</div>
+                  <div className="grid gap-3 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
                     {batchList.map((p, i) => {
                       const total = parseEuro(form.plankosten) || 0;
                       const sumPct = batchList.reduce((acc, x) => acc + (Number(procShares[x.key]) || 0), 0);
                       const pct = Number(procShares[p.key]) || 0;
                       const amount = sumPct > 0 ? (total * (pct / sumPct)) : 0;
                       return (
-                        <div key={p.key} className="flex items-center gap-3">
-                          <div className="flex-1 truncate text-sm" title={`${p.procName}`}>{p.procName}{Number.isFinite(Number(p.durationDays)) && Number(p.durationDays) > 0 ? ` (${Number(p.durationDays)} AT)` : ""}</div>
-                          <input
-                            type="number"
-                            step={0.1}
-                            min={0}
-                            className="w-24 p-2 rounded bg-[#333] text-white outline-none focus:outline-none focus:ring-0 text-right"
-                            value={Number.isFinite(Number(procShares[p.key])) ? procShares[p.key] : ""}
-                            onChange={e=>{
-                              const v = e.target.value === '' ? '' : Math.max(0, Number(e.target.value)||0);
-                              setProcShares(ps=>({ ...ps, [p.key]: v }));
-                            }}
-                          />
-                          <span className="text-sm">%</span>
-                          <div className="ml-auto text-sm text-white/80 min-w-[110px] text-right" title="Anteil in Euro">
+                        <div key={p.key} className="flex items-center gap-4 py-1">
+                          <div className="flex-1 truncate text-sm font-medium" title={`${p.procName}`}>
+                            {p.procName}
+                            {Number.isFinite(Number(p.durationDays)) && Number(p.durationDays) > 0 ? (
+                              <span className="text-muted-foreground font-normal ml-1">({Number(p.durationDays)} AT)</span>
+                            ) : ""}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Input
+                              type="number"
+                              step={0.1}
+                              min={0}
+                              className="w-20 h-8 text-right px-2"
+                              value={Number.isFinite(Number(procShares[p.key])) ? procShares[p.key] : ""}
+                              onChange={e=>{
+                                const v = e.target.value === '' ? '' : Math.max(0, Number(e.target.value)||0);
+                                setProcShares(ps=>({ ...ps, [p.key]: v }));
+                              }}
+                            />
+                            <span className="text-sm text-muted-foreground w-4">%</span>
+                          </div>
+                          <div className="text-sm font-medium text-slate-700 min-w-[90px] text-right">
                             {sumPct > 0 ? formatEuro(amount) : '–'}
                           </div>
                         </div>
                       );
                     })}
                   </div>
-                  <div className="flex items-center justify-between mt-3 text-sm">
-                    <div>
+                  <div className="flex items-center justify-between mt-4 pt-4 border-t">
+                    <div className="text-sm font-semibold">
                       Gesamt: {(() => {
                         const s = batchList.reduce((acc, p) => acc + (Number(procShares[p.key])||0), 0);
                         return `${Math.round(s*10)/10} %`;
                       })()}
                     </div>
                     <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        className="px-2 py-1 bg-[#374151] rounded"
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        className="h-8 text-xs"
                         onClick={()=>{
-                          // Gleich verteilen
                           const eq = batchList.length ? (100/batchList.length) : 0;
                           const obj = {};
                           batchList.forEach(p=>{ obj[p.key] = Math.round(eq*10)/10; });
                           setProcShares(obj);
                         }}
-                      >Gleich verteilen</button>
-                      <button
-                        type="button"
-                        className="px-2 py-1 bg-[#374151] rounded"
+                      >Gleich verteilen</Button>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        className="h-8 text-xs"
                         onClick={()=>{
-                          // Nach Dauer: ausschließlich aus API-Feld [Duration]
                           const ds = batchList.map(p => {
                             const d = Number(p.durationDays);
                             return Number.isFinite(d) && d > 0 ? d : 0;
@@ -3084,33 +3173,43 @@ ${it.trade || ""}${(it.responsibles && it.responsibles.length) ? `\nResp: ${it.r
                           else batchList.forEach(p=>{ obj[p.key] = 0; });
                           setProcShares(obj);
                         }}
-                      >Nach Dauer</button>
+                      >Nach Dauer</Button>
                     </div>
                   </div>
                 </div>
               )}
 
               {selectedProcCtx?.start && selectedProcCtx?.end && (
-                <div className="my-3 p-3 rounded bg-[#2a2a2a]">
-                  <div className="mb-2 font-medium">Zahlungsart</div>
-                  <div className="flex items-center gap-6 mb-3">
-                    <label className="flex items-center gap-2 text-sm">
-                      <input className="outline-none focus:outline-none focus:ring-0" type="radio" checked={zahlungsart==="einmalig"} onChange={()=>{setZahlungsart("einmalig"); setForm(f=>({...f, zahlungen: selectedProcCtx.end ? [{ datum: selectedProcCtx.end, betrag: Number(f.plankosten)||0 }] : []}))}} />
-                      Einmalig (am Ende)
+                <div className="mt-2 p-4 rounded-md border bg-slate-50/50">
+                  <div className="mb-3 font-semibold text-sm">Zahlungsart</div>
+                  <div className="flex items-center gap-6 mb-4">
+                    <label className="flex items-center gap-2 text-sm cursor-pointer">
+                      <input className="h-4 w-4 text-primary border-slate-300 focus:ring-primary" type="radio" checked={zahlungsart==="einmalig"} onChange={()=>{setZahlungsart("einmalig"); setForm(f=>({...f, zahlungen: selectedProcCtx.end ? [{ datum: selectedProcCtx.end, betrag: Number(f.plankosten)||0 }] : []}))}} />
+                      <span>Einmalig (am Ende)</span>
                     </label>
-                    <label className="flex items-center gap-2 text-sm">
-                      <input className="outline-none focus:outline-none focus:ring-0" type="radio" checked={zahlungsart==="mehrfach"} onChange={()=>{setZahlungsart("mehrfach"); }} />
-                      Mehrfach
+                    <label className="flex items-center gap-2 text-sm cursor-pointer">
+                      <input className="h-4 w-4 text-primary border-slate-300 focus:ring-primary" type="radio" checked={zahlungsart==="mehrfach"} onChange={()=>{setZahlungsart("mehrfach"); }} />
+                      <span>Mehrfach</span>
                     </label>
                   </div>
 
                   {zahlungsart === "mehrfach" && (
-                    <div className="flex items-end gap-3 mb-3">
-                      <label className="text-sm font-medium">
-                        Anzahl Zahlungen
-                        <input type="number" min={2} value={anzahlZahlungen} onChange={e=>setAnzahlZahlungen(Number(e.target.value)||2)} className="mt-1 p-2 w-32 rounded bg-[#333] text-white outline-none focus:outline-none focus:ring-0" />
-                      </label>
-                      <button
+                    <div className="flex items-end gap-3 mb-4">
+                      <div className="grid gap-1.5">
+                        <Label htmlFor="anzahlZahlungen">Anzahl Zahlungen</Label>
+                        <Input 
+                          id="anzahlZahlungen"
+                          type="number" 
+                          min={2} 
+                          value={anzahlZahlungen} 
+                          onChange={e=>setAnzahlZahlungen(Number(e.target.value)||2)} 
+                          className="w-32 h-9"
+                        />
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-9"
                         onClick={()=>{
                           if(!(selectedProcCtx?.start && selectedProcCtx?.end)) return;
                           const duration = selectedProcCtx.end.getTime() - selectedProcCtx.start.getTime();
@@ -3119,25 +3218,38 @@ ${it.trade || ""}${(it.responsibles && it.responsibles.length) ? `\nResp: ${it.r
                           const neue = Array.from({length: Math.max(2,anzahlZahlungen)}).map((_,i)=>({ datum:new Date(selectedProcCtx.start.getTime()+i*step), betrag }));
                           setForm(f=>({...f, zahlungen: neue}));
                         }}
-                        className="px-3 py-2 bg-[#00e0d6] text-black rounded"
-                      >Zahlungen verteilen</button>
+                      >Verteilen</Button>
                     </div>
                   )}
 
                   {/* Zahlungen Liste */}
-                  <div className="grid gap-2">
+                  <div className="grid gap-2 max-h-[200px] overflow-y-auto pr-2 custom-scrollbar">
                     {(form.zahlungen||[]).map((z, idx) => (
-                      <div key={idx} className="grid grid-cols-2 gap-2 items-center">
-                        <input type="date" value={new Date(z.datum).toISOString().slice(0,10)} onChange={e=>{
-                          const copy = [...(form.zahlungen||[])];
-                          copy[idx] = { ...copy[idx], datum: new Date(e.target.value) };
-                          setForm({ ...form, zahlungen: copy });
-                        }} className="p-2 rounded bg-[#333] text-white outline-none focus:outline-none focus:ring-0" />
-                        <input type="number" step="0.01" value={z.betrag} onChange={e=>{
-                          const copy = [...(form.zahlungen||[])];
-                          copy[idx] = { ...copy[idx], betrag: Number(e.target.value)||0 };
-                          setForm({ ...form, zahlungen: copy });
-                        }} className="p-2 rounded bg-[#333] text-white outline-none focus:outline-none focus:ring-0" />
+                      <div key={idx} className="flex gap-2 items-center">
+                        <Input 
+                          type="date" 
+                          value={new Date(z.datum).toISOString().slice(0,10)} 
+                          onChange={e=>{
+                            const copy = [...(form.zahlungen||[])];
+                            copy[idx] = { ...copy[idx], datum: new Date(e.target.value) };
+                            setForm({ ...form, zahlungen: copy });
+                          }} 
+                          className="h-9"
+                        />
+                        <div className="relative flex-1">
+                          <Input 
+                            type="number" 
+                            step="0.01" 
+                            value={z.betrag} 
+                            onChange={e=>{
+                              const copy = [...(form.zahlungen||[])];
+                              copy[idx] = { ...copy[idx], betrag: Number(e.target.value)||0 };
+                              setForm({ ...form, zahlungen: copy });
+                            }} 
+                            className="h-9 pl-7"
+                          />
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">€</span>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -3145,19 +3257,31 @@ ${it.trade || ""}${(it.responsibles && it.responsibles.length) ? `\nResp: ${it.r
               )}
             </div>
 
-            <div className="flex justify-between items-center gap-3 mt-4">
+            <div className="flex justify-between items-center gap-3 mt-8 pt-4 border-t">
               <div>
                 {(editingIndex != null && editingIndex >= 0) && (
-                  <button
+                  <Button
+                    variant="destructive"
                     onClick={() => deleteAuftrag(editingIndex)}
-                    className="px-4 py-2 bg-red-600 text-white rounded"
                     title="Diesen Auftrag löschen"
-                  >Löschen</button>
+                  >
+                    Löschen
+                  </Button>
                 )}
               </div>
               <div className="flex gap-3">
-                <button onClick={()=>{ setModalOpen(false); setProcShares({}); }} className="px-4 py-2 bg-gray-600 rounded">Abbrechen</button>
-                <button onClick={saveAuftrag} className="px-4 py-2 bg-[#00e0d6] text-black rounded">Speichern</button>
+                <Button 
+                  variant="outline"
+                  onClick={()=>{ setModalOpen(false); setProcShares({}); }}
+                >
+                  Abbrechen
+                </Button>
+                <Button 
+                  className="bg-[#00e0d6] text-black hover:bg-[#00c9c0]"
+                  onClick={saveAuftrag}
+                >
+                  Speichern
+                </Button>
               </div>
             </div>
           </div>
@@ -3169,10 +3293,6 @@ ${it.trade || ""}${(it.responsibles && it.responsibles.length) ? `\nResp: ${it.r
         <div className="flex items-center gap-2">
           <span className="inline-block w-3 h-3 rounded-sm bg-[#ff5a5f]" />
           Heute
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="inline-block w-3 h-3 rounded-sm bg-white/10" />
-          Wochenenden leicht schattiert
         </div>
       </div>
     </div>

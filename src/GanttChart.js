@@ -1,9 +1,16 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { scaleTime, scaleBand } from "@visx/scale";
 import { Bar, Line } from "@visx/shape";
 import { AxisBottom, AxisLeft } from "@visx/axis";
 import { Group } from "@visx/group";
 import { useTooltip, TooltipWithBounds, defaultStyles } from "@visx/tooltip";
+import { localPoint } from "@visx/event";
+import ParentSize from "@visx/responsive/lib/components/ParentSize";
+import { tooltipStyles, tooltipHeaderStyle } from "./tooltipStyles";
+import {
+  Card,
+  CardContent,
+} from "./components/ui/card";
 
 const excelDateToJSDate = (serial) => {
   if (!serial || isNaN(serial)) return null;
@@ -12,23 +19,87 @@ const excelDateToJSDate = (serial) => {
   return new Date(utc_value * 1000);
 };
 
-const GanttChart = ({ data, selectedProjects }) => {
-  if (!data) return <p className="text-gray-400 text-lg">Keine Daten verfügbar...</p>;
+const RESPONSIBLE_KEYS = [
+  "Responsibles", "Responsible", "Verantwortlich", "Verantwortliche", "Verantwortliche(r)"
+];
+const parseResponsibles = (val) => {
+  if (val == null && val !== 0) return [];
+  if (Array.isArray(val)) return val.map(String).map(s => s.trim()).filter(Boolean);
+  const s = String(val);
+  return s.split(/[\n,;\/|]+/g).map(t => t.trim()).filter(Boolean);
+};
 
+const ChartContent = ({ data, selectedProjects, width, height, searchTerm, gewerkFilter, bereichFilter, responsiblesFilter }) => {
   const today = new Date();
+  const normalizedSearch = searchTerm?.toLowerCase().trim();
 
-  let projectData = Object.keys(data)
+  const projectData = Object.keys(data)
     .map((projectName) => {
       if (selectedProjects.length > 0 && !selectedProjects.includes(projectName)) return null;
 
       const jsonData = data[projectName];
 
-      const startDates = jsonData
-        .map((row) => excelDateToJSDate(row["Start Date"]))
-        .filter((date) => date instanceof Date && !isNaN(date));
-      const endDates = jsonData
-        .map((row) => excelDateToJSDate(row["End Date"]))
-        .filter((date) => date instanceof Date && !isNaN(date));
+      // Alle Prozesse sammeln
+      const processes = jsonData.map((row) => {
+        const name = (row["Process"] || row["Task"] || "Unbekannt").toString();
+        const trade = (row["Trade"] || "").toString();
+        const id = (row["ID"] || "").toString();
+
+        // --- FILTERS ---
+        if (gewerkFilter && gewerkFilter.length > 0 && !gewerkFilter.includes(trade)) {
+          return null;
+        }
+
+        const rowBereich = row["Bereich"] || row["Area"] || "";
+        const rowTaktLevel1 = row["TaktZone Level 1"] || "";
+        const rowTaktLevel2 = row["TaktZone Level 2"] || "";
+        const rowTaktLevel3 = row["TaktZone Level 3"] || "";
+        const rowTaktLevel4 = row["TaktZone Level 4"] || "";
+
+        const areas = [
+          rowBereich,
+          rowTaktLevel1,
+          [rowTaktLevel1, rowTaktLevel2].filter(Boolean).join(" / "),
+          [rowTaktLevel1, rowTaktLevel2, rowTaktLevel3].filter(Boolean).join(" / "),
+          [rowTaktLevel1, rowTaktLevel2, rowTaktLevel3, rowTaktLevel4].filter(Boolean).join(" / ")
+        ].filter(Boolean);
+
+        if (bereichFilter && bereichFilter.length > 0) {
+          const hasAreaMatch = areas.some(a => bereichFilter.includes(a));
+          if (!hasAreaMatch) return null;
+        }
+
+        if (responsiblesFilter && responsiblesFilter.length > 0) {
+          const rowResponsibles = parseResponsibles(row.Responsibles ?? row.Responsible ?? row.Verantwortlich ?? row["Verantwortliche(r)"]);
+          const hasRespMatch = rowResponsibles.some(r => responsiblesFilter.includes(r));
+          if (!hasRespMatch) return null;
+        }
+        // ---------------
+
+        const start = excelDateToJSDate(row["Start Date"]);
+        const end = excelDateToJSDate(row["End Date"]);
+        const status = row["Status"];
+
+        if (normalizedSearch) {
+          const hit = 
+            projectName.toLowerCase().includes(normalizedSearch) ||
+            name.toLowerCase().includes(normalizedSearch) ||
+            trade.toLowerCase().includes(normalizedSearch) ||
+            id.toLowerCase().includes(normalizedSearch);
+          
+          if (!hit) return null;
+        }
+        
+        return {
+          name,
+          start,
+          end,
+          status,
+        };
+      }).filter(p => p && p.start && p.end);
+
+      const startDates = processes.map(p => p.start);
+      const endDates = processes.map(p => p.end);
 
       if (startDates.length === 0 || endDates.length === 0) return null;
 
@@ -37,8 +108,8 @@ const GanttChart = ({ data, selectedProjects }) => {
       const totalDuration = (projectEnd - projectStart) / (1000 * 60 * 60 * 24);
       const elapsedTime = (today - projectStart) / (1000 * 60 * 60 * 24);
 
-      const pastProcesses = jsonData.filter((row) => excelDateToJSDate(row["End Date"]) < today);
-      const completedPastProcesses = pastProcesses.filter((row) => row["Status"] === 1);
+      const pastProcesses = processes.filter((p) => p.end < today);
+      const completedPastProcesses = pastProcesses.filter((p) => p.status === 1);
 
       const completionFactor =
         pastProcesses.length > 0 ? completedPastProcesses.length / pastProcesses.length : 0;
@@ -51,20 +122,33 @@ const GanttChart = ({ data, selectedProjects }) => {
         progress,
         totalProcesses: pastProcesses.length,
         completedProcesses: completedPastProcesses.length,
+        processes, // Alle Prozesse für das Rendering
       };
     })
     .filter(Boolean);
 
-  const width = 900;
-  const height = 450;
-  const margin = { top: 40, right: 20, bottom: 60, left: 200 };
-  const xMax = width - margin.left - margin.right;
-  const yMax = height - margin.top - margin.bottom;
+  if (projectData.length === 0) return <p className="text-muted-foreground text-lg p-6">Keine passenden Projektdaten gefunden.</p>;
+
+  const margin = { top: 25, right: 20, bottom: 40, left: 140 };
+  const xMax = Math.max(0, width - margin.left - margin.right);
+  
+  // Feste Balkenhöhe und Abstand wie in Fortschritt.js
+  const barHeight = 60;
+  const gap = 30;
+  const chartHeight = projectData.length * (barHeight + gap);
+  const yMax = Math.max(chartHeight, 200);
+
+  const startDate = new Date(Math.min(...projectData.map((d) => d.start.getTime())));
+  const endDate = new Date(Math.max(...projectData.map((d) => d.end.getTime())));
+  
+  // Puffer hinzufügen (z.B. 10% der Gesamtdauer)
+  const duration = endDate.getTime() - startDate.getTime();
+  const buffer = duration * 0.05;
 
   const xScale = scaleTime({
     domain: [
-      Math.min(...projectData.map((d) => d.start.getTime())),
-      Math.max(...projectData.map((d) => d.end.getTime())),
+      startDate.getTime() - buffer,
+      endDate.getTime() + buffer,
     ],
     range: [0, xMax],
   });
@@ -72,124 +156,194 @@ const GanttChart = ({ data, selectedProjects }) => {
   const yScale = scaleBand({
     domain: projectData.map((d) => d.project),
     range: [0, yMax],
-    padding: 0.4,
+    padding: 30 / (60 + 30), // padding ratio relative to step
   });
 
-  const tooltipStyles = {
-    ...defaultStyles,
-    backgroundColor: "#1a1a1a",
-    color: "#ffffff",
-    fontSize: "14px",
-    padding: "8px 12px",
-    borderRadius: "6px",
-    border: "1px solid #333",
-  };
-
   const { showTooltip, hideTooltip, tooltipData, tooltipLeft, tooltipTop } = useTooltip();
-  const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
 
   return (
-    <div className="p-6 font-inter text-white w-full relative">
-      <h2 className="text-3xl font-bold mb-6">Projekt-Zeitstrahl</h2>
-      <div className="relative">
-        <svg
-          width={width}
-          height={height}
-          className="bg-[#111] rounded-lg"
-          onMouseMove={(event) => {
-            setMousePosition({ x: event.clientX, y: event.clientY });
-          }}
-        >
-          <Group left={margin.left} top={margin.top}>
-            <AxisBottom
-              top={yMax}
-              scale={xScale}
-              stroke="#ccc"
-              tickFormat={(d) => new Date(d).toLocaleDateString("de-DE")}
-              tickLabelProps={() => ({ fill: "#ccc", fontSize: 12, textAnchor: "middle" })}
-            />
-            <AxisLeft
-              scale={yScale}
-              stroke="#ccc"
-              tickLabelProps={() => ({ fill: "#ccc", fontSize: 14, textAnchor: "end" })}
-            />
-            {projectData.map((d) => {
-              const x = xScale(d.start.getTime());
-              const y = yScale(d.project);
-              const width = xScale(d.end.getTime()) - x;
-              const progressWidth = width * (d.progress / 100);
+    <div className="relative group/chart overflow-x-auto overflow-y-hidden pb-4">
+      <svg width={width} height={yMax + margin.top + margin.bottom} className="overflow-visible">
+        <Group left={margin.left} top={margin.top}>
+          <AxisBottom
+            top={yMax}
+            scale={xScale}
+            stroke="hsl(var(--muted-foreground))"
+            tickFormat={(d) => new Date(d).toLocaleDateString("de-DE", { day: '2-digit', month: '2-digit' })}
+            numTicks={width > 800 ? 10 : 5}
+            tickLabelProps={() => ({ 
+              fill: "hsl(var(--muted-foreground))", 
+              fontSize: 12, 
+              textAnchor: "middle",
+              fontFamily: "Inter, sans-serif"
+            })}
+          />
+          <AxisLeft
+            scale={yScale}
+            stroke="hsl(var(--muted-foreground))"
+            tickLabelProps={() => ({ 
+              fill: "hsl(var(--muted-foreground))", 
+              fontSize: 13, 
+              textAnchor: "end", 
+              dx: "-0.5em", 
+              dy: "0.33em",
+              fontFamily: "Inter, sans-serif",
+              fontWeight: 500
+            })}
+            tickFormat={(d) => d.length > 25 ? d.substring(0, 22) + "..." : d}
+          />
+          {projectData.map((d) => {
+            const x = xScale(d.start.getTime());
+            const y = yScale(d.project);
+            const barWidth = xScale(d.end.getTime()) - x;
+            const progressWidth = Math.max(0, Math.min(barWidth, barWidth * (d.progress / 100)));
+            const radius = 6;
 
-              return (
-                <g
-                  key={d.project}
-                  onMouseEnter={(event) => {
-                    showTooltip({
-                      tooltipLeft: event.clientX + 10,
-                      tooltipTop: event.clientY - 30,
-                      tooltipData: d,
-                    });
-                  }}
-                  onMouseMove={(event) => {
-                    showTooltip({
-                      tooltipLeft: event.clientX + 10,
-                      tooltipTop: event.clientY - 30,
-                      tooltipData: d,
-                    });
-                  }}
-                  onMouseLeave={() => hideTooltip()}
-                >
-                  <Bar
-                    x={x}
-                    y={y}
-                    width={width}
-                    height={yScale.bandwidth()}
-                    fill="#2f3e46"
-                    rx={6}
-                    opacity={0.7}
-                  />
-                  <Bar
-                    x={x}
-                    y={y}
-                    width={progressWidth}
-                    height={yScale.bandwidth()}
-                    fill="#14b8a6"
-                    rx={6}
-                  />
+            return (
+              <g
+                key={d.project}
+                className="group/row transition-all duration-200"
+                onMouseEnter={(event) => {
+                  const point = localPoint(event);
+                  showTooltip({
+                    tooltipLeft: point.x,
+                    tooltipTop: point.y - 20,
+                    tooltipData: d,
+                  });
+                }}
+                onMouseMove={(event) => {
+                  const point = localPoint(event);
+                  showTooltip({
+                    tooltipLeft: point.x,
+                    tooltipTop: point.y - 20,
+                    tooltipData: d,
+                  });
+                }}
+                onMouseLeave={() => hideTooltip()}
+              >
+                {/* Hintergrund-Balken */}
+                <rect
+                  x={x}
+                  y={y}
+                  width={barWidth}
+                  height={yScale.bandwidth()}
+                  fill="hsl(var(--muted))"
+                  rx={radius}
+                  className="opacity-20"
+                />
+                {/* Fortschritts-Balken */}
+                <rect
+                  x={x}
+                  y={y}
+                  width={progressWidth}
+                  height={yScale.bandwidth()}
+                  fill="#10b981"
+                  rx={radius}
+                  className="transition-all duration-300 hover:brightness-110"
+                />
+                {d.progress > 5 && (
                   <text
-                    x={x + width / 2}
-                    y={y + yScale.bandwidth() / 2 + 5}
-                    fill="#ffffff"
-                    fontSize={14}
+                    x={x + progressWidth / 2}
+                    y={y + yScale.bandwidth() / 2}
+                    dy=".35em"
+                    fill="white"
+                    fontSize={12}
                     textAnchor="middle"
-                    fontWeight="bold"
+                    fontWeight="500"
+                    className="pointer-events-none drop-shadow-sm font-inter"
                   >
                     {Math.round(d.progress)}%
                   </text>
-                </g>
-              );
-            })}
-            <Line
-              from={{ x: xScale(today.getTime()), y: 0 }}
-              to={{ x: xScale(today.getTime()), y: yMax }}
-              stroke="#ef4444"
-              strokeWidth={2}
-              strokeDasharray="5,5"
-            />
-          </Group>
-        </svg>
-        {tooltipData && (
-          <TooltipWithBounds left={tooltipLeft} top={tooltipTop} style={tooltipStyles}>
-            <div className="text-sm">
-              <strong>{tooltipData.project}</strong>
-              <br />📅 Start: {tooltipData.start.toLocaleDateString("de-DE")}
-              <br />🏁 Ende: {tooltipData.end.toLocaleDateString("de-DE")}
-              <br />📊 Fortschritt: {Math.round(tooltipData.progress)}% ({
-                tooltipData.completedProcesses
-              }/{tooltipData.totalProcesses})
+                )}
+              </g>
+            );
+          })}
+          <Line
+            from={{ x: xScale(today.getTime()), y: 0 }}
+            to={{ x: xScale(today.getTime()), y: yMax }}
+            stroke="#6b7280"
+            strokeWidth={2}
+            strokeDasharray="4 4"
+            className="drop-shadow-sm"
+          />
+          <text
+            x={xScale(today.getTime())}
+            y={-10}
+            fill="hsl(var(--muted-foreground))"
+            fontSize={13}
+            textAnchor="middle"
+            fontWeight="500"
+            fontFamily="Inter, sans-serif"
+          >
+            Heute ({today.toLocaleDateString("de-DE", { day: '2-digit', month: '2-digit' })})
+          </text>
+        </Group>
+      </svg>
+      {tooltipData && (
+        <TooltipWithBounds left={tooltipLeft} top={tooltipTop} style={{
+          ...tooltipStyles,
+          backgroundColor: "hsl(var(--popover))",
+          color: "hsl(var(--popover-foreground))",
+          boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)",
+          border: "1px solid hsl(var(--border))",
+          borderRadius: "0.5rem",
+          padding: "0.75rem",
+          zIndex: 100,
+        }}>
+          <div className="flex flex-col gap-1.5">
+            <div className="font-bold border-b border-border pb-1 mb-1" style={tooltipHeaderStyle}>
+              {tooltipData.project}
             </div>
-          </TooltipWithBounds>
-        )}
-      </div>
+            <div className="grid grid-cols-[1.25rem_1fr] items-center gap-x-2 text-xs">
+              <span>📅</span>
+              <span>
+                <span className="text-muted-foreground">Start:</span>{" "}
+                <span className="font-medium">{tooltipData.start.toLocaleDateString("de-DE")}</span>
+              </span>
+              <span>🏁</span>
+              <span>
+                <span className="text-muted-foreground">Ende:</span>{" "}
+                <span className="font-medium">{tooltipData.end.toLocaleDateString("de-DE")}</span>
+              </span>
+              <span>📊</span>
+              <span>
+                <span className="text-muted-foreground">Fortschritt:</span>{" "}
+                <span className="font-bold text-[#10b981]">{Math.round(tooltipData.progress)}%</span>
+              </span>
+              <span className="col-start-2 text-[10px] text-muted-foreground">
+                ({tooltipData.completedProcesses} von {tooltipData.totalProcesses} Prozessen)
+              </span>
+            </div>
+          </div>
+        </TooltipWithBounds>
+      )}
+    </div>
+  );
+};
+
+const GanttChart = ({ data, selectedProjects, searchTerm, gewerkFilter, bereichFilter, responsiblesFilter }) => {
+  if (!data) return <p className="text-gray-500 text-lg">Keine Daten verfügbar...</p>;
+
+  return (
+    <div className="p-4 font-inter text-gray-900 w-full min-h-[40vh]">
+      <Card className="w-full h-full overflow-visible border border-border shadow-sm bg-card">
+        <CardContent className="w-full h-full p-0">
+          <ParentSize>
+            {({ width, height }) => (
+              <ChartContent
+                data={data}
+                selectedProjects={selectedProjects}
+                width={width}
+                height={height}
+                searchTerm={searchTerm}
+                gewerkFilter={gewerkFilter}
+                bereichFilter={bereichFilter}
+                responsiblesFilter={responsiblesFilter}
+              />
+            )}
+          </ParentSize>
+        </CardContent>
+      </Card>
     </div>
   );
 };

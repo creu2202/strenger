@@ -5,6 +5,8 @@ import { AxisBottom, AxisLeft } from "@visx/axis";
 import { Group } from "@visx/group";
 import { Bar, Line } from "@visx/shape";
 import { useTooltip, TooltipWithBounds, defaultStyles } from "@visx/tooltip";
+import { localPoint } from "@visx/event";
+import { tooltipStyles, tooltipHeaderStyle } from "./tooltipStyles";
 import { timeFormat } from "d3-time-format";
 import Select from "react-select";
 import * as d3 from "d3-time";
@@ -464,20 +466,18 @@ const yMax = height - margin.top - margin.bottom;
                   rx={4}
                   onClick={() => handleBarClick(balken)}
                   onMouseEnter={(e) => {
-                    const svg = e.target.ownerSVGElement;
-                    const bounds = svg.getBoundingClientRect();
+                    const point = localPoint(e);
                     showTooltip({
-                      tooltipLeft: e.clientX - bounds.left,
-                      tooltipTop: e.clientY - bounds.top - 20,
+                      tooltipLeft: point.x,
+                      tooltipTop: point.y - 20,
                       tooltipData: balken,
                     });
                   }}
                   onMouseMove={(e) => {
-                    const svg = e.target.ownerSVGElement;
-                    const bounds = svg.getBoundingClientRect();
+                    const point = localPoint(e);
                     showTooltip({
-                      tooltipLeft: e.clientX - bounds.left,
-                      tooltipTop: e.clientY - bounds.top - 20,
+                      tooltipLeft: point.x,
+                      tooltipTop: point.y - 20,
                       tooltipData: balken,
                     });
                   }}
@@ -491,20 +491,18 @@ const yMax = height - margin.top - margin.bottom;
                   fill="#000"
                   pointerEvents="all"
                   onMouseEnter={(e) => {
-                    const svg = e.target.ownerSVGElement;
-                    const bounds = svg.getBoundingClientRect();
+                    const point = localPoint(e);
                     showTooltip({
-                      tooltipLeft: e.clientX - bounds.left,
-                      tooltipTop: e.clientY - bounds.top - 20,
+                      tooltipLeft: point.x,
+                      tooltipTop: point.y - 20,
                       tooltipData: balken,
                     });
                   }}
                   onMouseMove={(e) => {
-                    const svg = e.target.ownerSVGElement;
-                    const bounds = svg.getBoundingClientRect();
+                    const point = localPoint(e);
                     showTooltip({
-                      tooltipLeft: e.clientX - bounds.left,
-                      tooltipTop: e.clientY - bounds.top - 20,
+                      tooltipLeft: point.x,
+                      tooltipTop: point.y - 20,
                       tooltipData: balken,
                     });
                   }}
@@ -537,18 +535,22 @@ const yMax = height - margin.top - margin.bottom;
         <TooltipWithBounds
           top={tooltipTop}
           left={tooltipLeft}
-          style={{ ...defaultStyles, backgroundColor: '#222', color: '#fff', fontSize: 12 }}
+          style={tooltipStyles}
         >
-          <div><strong>{tooltipData.taktZone}</strong></div>
-          <div>📍 Bereich: {tooltipData.taktZone}</div>
-          <div>📅 {tooltipData.start.toLocaleDateString("de-DE")} – {tooltipData.end.toLocaleDateString("de-DE")}</div>
-          <div className="mt-1">🧩 Prozesse:</div>
-          <ul className="list-disc ml-4">
-            {tooltipData.prozesse.slice(0, 5).map((p, i) => (
-              <li key={i}>{p.Process} ({p.Trade})</li>
-            ))}
-            {tooltipData.prozesse.length > 5 && <li>...und mehr</li>}
-          </ul>
+          <div className="text-sm">
+            <strong style={tooltipHeaderStyle}>{tooltipData.taktZone}</strong>
+            <div className="space-y-1">
+              <div>📍 Bereich: {tooltipData.taktZone}</div>
+              <div>📅 {tooltipData.start.toLocaleDateString("de-DE")} – {tooltipData.end.toLocaleDateString("de-DE")}</div>
+              <div className="mt-2 font-semibold">🧩 Prozesse:</div>
+              <ul className="list-disc ml-4">
+                {tooltipData.prozesse.slice(0, 5).map((p, i) => (
+                  <li key={i}>{p.Process} ({p.Trade})</li>
+                ))}
+                {tooltipData.prozesse.length > 5 && <li>...und mehr</li>}
+              </ul>
+            </div>
+          </div>
         </TooltipWithBounds>
       )}
   

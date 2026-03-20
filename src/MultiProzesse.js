@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { FaCalendarAlt, FaCheck } from "react-icons/fa";
+import { format, endOfISOWeek, startOfISOWeek, getISOWeek, addDays, startOfDay, differenceInCalendarDays } from "date-fns";
+import { de } from "date-fns/locale";
+import { FaCalendarAlt, FaCheck, FaChartLine, FaFilePdf } from "react-icons/fa";
 
 
 // --- Feld-Mapping (inkl. Process & Start/End Date aus deinen Sheets)
@@ -77,24 +79,6 @@ const normalizeColor = (val) => {
 const fmtDM = (d) =>
   d ? d.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" }) : "–";
 
-const startOfISOWeek = (d) => {
-  const x = new Date(d); const day = (x.getDay() + 6) % 7; // Mo=0 ... So=6
-  x.setDate(x.getDate() - day); x.setHours(0,0,0,0);
-  return x;
-};
-const endOfISOWeek = (d) => addDays(startOfISOWeek(d), 6);
-
-
-// ISO-Kalenderwoche (KW) berechnen
-const getISOWeek = (date) => {
-  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-  const dayNum = d.getUTCDay() || 7;         // 1..7 (Mo..So)
-  d.setUTCDate(d.getUTCDate() + 4 - dayNum); // auf Donnerstag der ISO-Woche
-  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-  const weekNo = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
-  return weekNo;
-};
-
 
 // --- Farb-Utilities: parse + Kontrast-basierte Textfarbe --------------------
 const parseHex = (s) => {
@@ -163,6 +147,19 @@ const parseAnyColor = (val) => {
   if (!val) return null;
   const s = String(val).trim();
   return parseHex(s) || parseRgb(s) || parseHsl(s) || null;
+};
+
+const darkenColor = (color, percent) => {
+  const parsed = parseAnyColor(color);
+  if (!parsed) return "#333333";
+  const f = 1 - percent / 100;
+  return `rgb(${Math.round(parsed.r * f)}, ${Math.round(parsed.g * f)}, ${Math.round(parsed.b * f)})`;
+};
+
+const getLightColor = (type, baseColor) => {
+  const parsed = parseAnyColor(baseColor);
+  if (!parsed) return "rgba(0, 0, 0, 0.05)";
+  return `rgba(${parsed.r}, ${parsed.g}, ${parsed.b}, 0.15)`;
 };
 
 const blendOverWhite = ({ r, g, b, a }) => {
@@ -237,9 +234,7 @@ const parseDate = (v) => {
 const fmtShort = (d) =>
   d ? d.toLocaleDateString(undefined, { year: "2-digit", month: "2-digit", day: "2-digit" }) : "–";
 
-const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
-const addDays = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
-const diffDays = (a, b) => Math.round((startOfDay(b) - startOfDay(a)) / 86400000);
+const diffDays = (a, b) => differenceInCalendarDays(b, a);
 
 const inWindow = (start, end, from, to) => {
   const sIn = start && start >= from && start <= to;
@@ -283,6 +278,7 @@ export default function MultiProzesse({
   bereichFilter = [],
   responsiblesFilter = [],          // <— NEU
   peopleByProcess = {},
+  searchTerm = "",
 }) {
   const today = startOfDay(new Date());
   const from = addDays(today, -14); // -2 Wochen
@@ -333,14 +329,16 @@ export default function MultiProzesse({
 );
 
 const normalizedResponsiblesFilter = useMemo(                 // <— NEU
-  () => (responsiblesFilter || []).map(r => String(r).toLowerCase().trim()),
-  [responsiblesFilter]
-);
+    () => (responsiblesFilter || []).map(r => String(r).toLowerCase().trim()),
+    [responsiblesFilter]
+  );
 
-  // Arbeitskalender: nur Montag–Donnerstag sichtbar/gezählt
+  const normalizedSearchTerm = useMemo(() => searchTerm.toLowerCase().trim(), [searchTerm]);
+
+  // Arbeitskalender: nur Montag–Freitag sichtbar/gezählt
   const isWorkday = (d) => {
     const wd = d.getDay();
-    return wd >= 1 && wd <= 4; // 1=Mo ... 4=Do
+    return wd >= 1 && wd <= 5; // 1=Mo ... 5=Fr
   };
   const countWorkdaysInclusive = (a, b) => {
     if (!a || !b) return 0;
@@ -369,7 +367,7 @@ const normalizedResponsiblesFilter = useMemo(                 // <— NEU
   };
 
   const [dayWidth, setDayWidth] = useState(28); // px pro Tag (responsive)
-  // Nur Arbeitstage (Mo-Do) innerhalb des Fensters anzeigen
+  // Nur Arbeitstage (Mo-Fr) innerhalb des Fensters anzeigen
   const days = useMemo(() => {
     const res = [];
     for (let d = from; d <= to; d = addDays(d, 1)) {
@@ -489,13 +487,31 @@ if (durationDays == null) {
     if (!hit) continue;
   }
 
-  if (normalizedBereichFilter.length > 0) {
-    const areaLower = String(area).toLowerCase();
-    const hit = normalizedBereichFilter.some(sel => areaLower === sel || areaLower.includes(sel));
-    if (!hit) continue;
-  }
+    if (normalizedBereichFilter.length > 0) {
+      const areaLower = String(area).toLowerCase();
+      const hit = normalizedBereichFilter.some(sel => areaLower === sel || areaLower.includes(sel));
+      if (!hit) continue;
+    }
 
-  // Gruppe & Push
+    // --- GLOBALER SEARCH FILTER ---
+    if (normalizedSearchTerm) {
+      const nameLower = name.toLowerCase();
+      const tradeLower = trade.toLowerCase();
+      const areaLower = String(area).toLowerCase();
+      const respLower = responsibles.map(r => r.toLowerCase());
+      const projLower = projName.toLowerCase();
+
+      const hit = 
+        nameLower.includes(normalizedSearchTerm) ||
+        tradeLower.includes(normalizedSearchTerm) ||
+        areaLower.includes(normalizedSearchTerm) ||
+        projLower.includes(normalizedSearchTerm) ||
+        respLower.some(r => r.includes(normalizedSearchTerm));
+      
+      if (!hit) continue;
+    }
+
+    // Gruppe & Push
   const key = `${projName} :: ${area}`;
   if (!map.has(key)) map.set(key, { key, project: projName, area, items: [] });
 
@@ -631,18 +647,12 @@ const resourceByDayTrade = useMemo(() => {
   return { byTrade, totals, trades, maxTotal, tradeColors };
 }, [days, groups, peopleByProcess, from, to]);
 
-const MONTH_H = 28;   // Höhe der Monatschips
-const KW_H    = 18;   // Höhe der KW-Zeile
-const GAP_H   = 6;    // Abstand zwischen den Zeilen
-const BASE_HEADER_H = MONTH_H + KW_H + GAP_H;
-const [RESOURCE_H, setRESOURCE_H] = useState(() => {
-  const v = Number(localStorage.getItem('resourceCurveH'));
-  return isFinite(v) && v >= 24 && v <= 200 ? v : 56;
-}); // Höhe für Ressourcenkurve (veränderbar)
+const MONTH_H = 34;   // Obere Header-Zeile
+const KW_H    = 34;   // Untere Header-Zeile (Einzelne Tage)
+const GAP_H   = 0;    // Kein Abstand mehr
+const BASE_HEADER_H = MONTH_H + KW_H;
+const RESOURCE_H = 150; // Festgelegte Höhe für Ressourcenkurve
 
-useEffect(() => {
-  try { localStorage.setItem('resourceCurveH', String(RESOURCE_H)); } catch {}
-}, [RESOURCE_H]);
 const headerH = BASE_HEADER_H + (showResourceCurve ? RESOURCE_H : 0);
 
 // Text-Zeilenhöhe links (px)
@@ -650,6 +660,9 @@ const LABEL_TITLE_LH = 20;  // etwa leading-5
 const LABEL_SUB_LH   = 16;  // etwa leading-4
 const ROW_PAD        = 8;   // bleibt wie gehabt
 const LABEL_MIN_H    = ROW_PAD * 2 + LABEL_TITLE_LH + LABEL_SUB_LH; // = 52px
+
+// Header links (sticky) Höhe berechnen
+const leftHeaderH = headerH;
 
 // Wechselnde Wochen-Bänder (für Hintergrund-Schattierung)
 const weekBands = useMemo(() => {
@@ -736,7 +749,7 @@ function sx(el, attrs) {
 function tnode(text) { return document.createTextNode(text); }
 
 // ===== Mehrzeiliger Text im SVG (tspan) =====
-function makeMeasureCtx(font = '600 16px -apple-system, Segoe UI, Roboto, Helvetica, Arial') {
+function makeMeasureCtx(font = '600 16px Inter, sans-serif') {
   const c = document.createElement('canvas');
   const ctx = c.getContext('2d');
   ctx.font = font;
@@ -827,11 +840,12 @@ async function handleExportPDF() {
   const LABEL_TITLE_LH = 20;
   const LABEL_SUB_LH   = 16;
   const LABEL_MIN_H    = ROW_PAD * 2 + LABEL_TITLE_LH + LABEL_SUB_LH; // 52
-  const MONTH_H = 28, KW_H = 18, GAP_H = 6;
-  const headerH = MONTH_H + KW_H + GAP_H;
+  const MONTH_H = 34, KW_H = 34, GAP_H = 0;
+  const headerH = MONTH_H + KW_H + (showResourceCurve ? RESOURCE_H : 0) + GAP_H;
 
   // Heute-Offset
   const today = startOfDay(new Date());
+  const todayStr = format(today, 'yyyy-MM-dd');
   const todayOffset = Math.min(Math.max(0, diffWorkdays(from, today) * DW + DW / 2), timelineWidth);
 
   // Row-Heights vorbereiten (identisch wie in deinem Render)
@@ -889,11 +903,16 @@ async function handleExportPDF() {
   const defs = document.createElementNS(svgNS, "defs");
   const style = document.createElementNS(svgNS, "style");
   style.appendChild(tnode(`
-    text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji","Segoe UI Symbol"; }
+    text { font-family: Inter, sans-serif; }
     .small { font-size: 11px; fill: #475569; }
     .tiny  { font-size: 10px; fill: #475569; }
-    .label-strong { font-weight: 600; fill: #0f172a; }
-    .label-sub    { fill: #64748b; }
+    .label-strong { font-weight: 600; fill: #0f172a; font-size: 13px; }
+    .label-sub    { fill: #64748b; font-size: 11px; }
+    
+    .header-cw { font-weight: 700; font-size: 14px; fill: #0f172a; }
+    .header-mon-year { font-size: 12px; fill: #475569; }
+    .header-day { font-size: 11px; fill: #334155; }
+    .header-day-today { font-size: 11px; fill: #1d4ed8; font-weight: 700; }
   `));
   defs.appendChild(style);
   svg.appendChild(defs);
@@ -902,31 +921,34 @@ async function handleExportPDF() {
   const headerG = sx(document.createElementNS(svgNS, "g"), { transform: `translate(${LEFT_W},0)` });
   svg.appendChild(headerG);
 
-  // Monats-Bänder
-  months.forEach((m, i) => {
+  // Wochen-Bänder (abwechselnd) wie in der Web-Ansicht
+  weeks.forEach((w, i) => {
+    const startIdx = w.idx;
+    const endIdx = (i < weeks.length - 1 ? weeks[i + 1].idx : days.length);
     headerG.appendChild(sx(document.createElementNS(svgNS, "rect"), {
-      x: m.startIdx * DW,
+      x: startIdx * DW,
       y: 0,
-      width: m.span * DW,
+      width: (endIdx - startIdx) * DW,
       height: headerH,
-      fill: i % 2 === 0 ? "rgba(148,163,184,0.06)" : "rgba(148,163,184,0.03)"
+      fill: i % 2 === 0 ? "rgba(148,163,184,0.08)" : "rgba(148,163,184,0.04)"
     }));
   });
 
-  // Tagesraster + Montags-Linien
+  // Tagesraster
   days.forEach((d, i) => {
-    // Raster
     headerG.appendChild(sx(document.createElementNS(svgNS, "line"), {
       x1: i * DW, y1: 0, x2: i * DW, y2: headerH, stroke: "#e5e7eb", "stroke-width": 1
     }));
   });
+
+  // Montags-Linien
   weeks.forEach(w => {
     headerG.appendChild(sx(document.createElementNS(svgNS, "line"), {
       x1: w.idx * DW, y1: 0, x2: w.idx * DW, y2: headerH, stroke: "#cbd5e1", "stroke-width": 2
     }));
   });
 
-  // Monats-Trenner
+  // Monats-Trenner (dicker)
   monthBoundaries.forEach(idx => {
     headerG.appendChild(sx(document.createElementNS(svgNS, "line"), {
       x1: idx * DW, y1: 0, x2: idx * DW, y2: headerH, stroke: "#94a3b8", "stroke-width": 3
@@ -935,100 +957,90 @@ async function handleExportPDF() {
 
   // Heute-Linie
   headerG.appendChild(sx(document.createElementNS(svgNS, "line"), {
-    x1: todayOffset, y1: 0, x2: todayOffset, y2: headerH, stroke: "#ff5a5f", "stroke-width": 2
+    x1: todayOffset, y1: 0, x2: todayOffset, y2: headerH, stroke: "#f43f5e", "stroke-width": 2
   }));
 
-// --- Monatslabels (Pill nur so breit wie der Text) ---
-const MONTH_LABEL_FONT = '700 12px -apple-system, Segoe UI, Roboto, Helvetica, Arial';
-const monthMeasure = makeMeasureCtx(MONTH_LABEL_FONT);
-
-months.forEach((m) => {
-  const left   = m.startIdx * DW + 6;        // wie in der Webansicht
-  const top    = 4;
-  const pillH  = MONTH_H - 8;                // identisch zur Web-Höhe
-  const text   = m.label;
-  const textW  = monthMeasure.measureText(text).width;
-
-  // Breite der Pill: Text + horizontales Padding (10px links/rechts)
-  // und Sicherheit, damit die Pill den Monat nicht „verlässt“:
-  const pillW  = Math.min(Math.max(80, textW + 20), m.span * DW - 12);
-
-  const g = sx(document.createElementNS(svgNS, "g"), {
-    transform: `translate(${left}, ${top})`
-  });
-
-  // Hintergrund der Pill
- const monthR = Math.max(1, Math.min(pillH / 2 - 0.01, pillW / 2 - 0.01));
- g.appendChild(sx(document.createElementNS(svgNS, "rect"), {
-   x: 0, y: 0, rx: monthR, ry: monthR, width: pillW, height: pillH,
-    fill: "rgba(148,163,184,0.18)",
-    stroke: "rgba(148,163,184,0.35)",
-    "stroke-width": 1
-  }));
-
-  // Text (inline styles → zuverlässige Farben im PDF)
- const t = sx(document.createElementNS(svgNS, "text"), {
-   x: 10, y: midY(0, pillH, 12),
-    "font-size": "12",
-    "font-weight": "700",
-    "font-family": '-apple-system, Segoe UI, Roboto, Helvetica, Arial',
-    fill: "#0f172a"
-  });
-  t.appendChild(tnode(text));
-  g.appendChild(t);
-
-  headerG.appendChild(g);
-});
-
-
-  // KW-Chips
-  weeks.forEach((w) => {
+  // --- Monatslabels / Wochen-Info (Obere Zeile) ---
+  weeks.forEach((w, i) => {
     const ws = days[w.idx];
     const we = endOfISOWeek(ws);
-    const left = w.idx * DW + 4;
-    const chipW = DW * 7 - 8;
+    
+    const monthsInWeek = [];
+    const mStart = format(ws, "MMM", { locale: de });
+    const mEnd = format(we, "MMM", { locale: de });
+    monthsInWeek.push(mStart);
+    if (mStart !== mEnd) monthsInWeek.push(mEnd);
+    const monthStr = monthsInWeek.join(" / ");
+    const yearStr = format(ws, "yyyy");
 
-    const g = sx(document.createElementNS(svgNS, "g"), { transform: `translate(${left}, ${MONTH_H + GAP_H})` });
-    g.appendChild(sx(document.createElementNS(svgNS, "rect"), {
-      x: 0, y: 0, rx: 8, ry: 8, width: chipW, height: KW_H,
-      fill: "rgba(255,255,255,0.7)", stroke: "rgba(100,116,139,0.25)", "stroke-width": 1
-    }));
- const badgeR = Math.max(1, Math.min((KW_H - 6) / 2 - 0.01, 44 / 2 - 0.01));
- const badge = sx(document.createElementNS(svgNS, "rect"), {
-   x: 6, y: 3, rx: badgeR, ry: badgeR, width: 44, height: KW_H - 6,
-      fill: "rgba(241,245,249,0.9)", stroke: "rgba(100,116,139,0.35)", "stroke-width": 1
+    const left = w.idx * DW;
+    const width = DW * 7; // Eine Woche
+
+    // CW Label
+    const tCW = sx(document.createElementNS(svgNS, "text"), {
+      x: left + 12,
+      y: midY(0, MONTH_H, 14),
+      class: "header-cw"
     });
-    g.appendChild(badge);
+    tCW.appendChild(tnode(`${w.no} CW`));
+    headerG.appendChild(tCW);
 
-// "KW 37" Badge-Text
-const t1 = sx(document.createElementNS(svgNS, "text"), {
-  x: 6 + 22,
-  y: KW_H / 2,
-  "text-anchor": "middle",
-  "dominant-baseline": "middle",
-  "font-size": "11",
-  "font-weight": "700",
-  "font-family": '-apple-system, Segoe UI, Roboto, Helvetica, Arial',
-  fill: "#0f172a"
-});
-t1.appendChild(tnode(`KW ${w.no}`));
-g.appendChild(t1);
+    // Monat
+    const tMon = sx(document.createElementNS(svgNS, "text"), {
+      x: left + 65,
+      y: midY(0, MONTH_H, 12),
+      class: "header-mon-year"
+    });
+    tMon.appendChild(tnode(monthStr));
+    headerG.appendChild(tMon);
 
-// Datumsbereich
-const t2 = sx(document.createElementNS(svgNS, "text"), {
-  x: 6 + 22 + 10 + 44,
-  y: KW_H / 2,
-  "dominant-baseline": "middle",
-  "font-size": "11",
-  "font-weight": "400",
-  "font-family": '-apple-system, Segoe UI, Roboto, Helvetica, Arial',
-  fill: "#475569"
-});
-t2.appendChild(tnode(`${fmtDM(ws)} – ${fmtDM(we)}`));
-g.appendChild(t2);
+    // Jahr
+    const tYear = sx(document.createElementNS(svgNS, "text"), {
+      x: left + width - 12,
+      y: midY(0, MONTH_H, 12),
+      "text-anchor": "end",
+      class: "header-mon-year"
+    });
+    tYear.appendChild(tnode(yearStr));
+    headerG.appendChild(tYear);
 
+    // Trenner unten
+    headerG.appendChild(sx(document.createElementNS(svgNS, "line"), {
+      x1: left, y1: MONTH_H, x2: left + width, y2: MONTH_H, stroke: "#cbd5e1", "stroke-width": 1
+    }));
+  });
 
-    headerG.appendChild(g);
+  // --- Tageslabels (Untere Zeile) ---
+  days.forEach((d, i) => {
+    const isToday = format(d, 'yyyy-MM-dd') === todayStr;
+    const dayNum = format(d, "d");
+    const dayName = format(d, "EEEEEE", { locale: de });
+    const isWeekend = d.getDay() === 0 || d.getDay() === 6;
+
+    if (isToday) {
+      headerG.appendChild(sx(document.createElementNS(svgNS, "rect"), {
+        x: i * DW, y: MONTH_H, width: DW, height: KW_H, fill: "rgba(29,78,216,0.05)"
+      }));
+    } else if (isWeekend) {
+      headerG.appendChild(sx(document.createElementNS(svgNS, "rect"), {
+        x: i * DW, y: MONTH_H, width: DW, height: KW_H, fill: "rgba(148,163,184,0.05)"
+      }));
+    }
+
+    const tDay = sx(document.createElementNS(svgNS, "text"), {
+      x: i * DW + DW / 2,
+      y: midY(MONTH_H, KW_H, 11),
+      "text-anchor": "middle",
+      class: isToday ? "header-day-today" : "header-day"
+    });
+    tDay.appendChild(tnode(`${dayNum} ${dayName}`));
+    headerG.appendChild(tDay);
+
+    // Rechter Rand pro Tag
+    headerG.appendChild(sx(document.createElementNS(svgNS, "line"), {
+      x1: (i + 1) * DW, y1: MONTH_H, x2: (i + 1) * DW, y2: MONTH_H + KW_H, 
+      stroke: d.getDay() === 0 ? "#94a3b8" : "#cbd5e1", "stroke-width": 1
+    }));
   });
 
   // --- Körper/Rows ---
@@ -1067,13 +1079,13 @@ g.appendChild(t2);
   const maxH      = rowHeight - ROW_PAD * 2;     // nutzbare Höhe in der Zelle
 
   // Titel (Projekt)
-  const titleFontMeasure = '600 16px -apple-system, Segoe UI, Roboto, Helvetica, Arial';
+  const titleFontMeasure = '600 14px Inter, sans-serif';
   const titleLH = 20; // px
   const usedH1 = drawWrappedSvgText({
     parent: svg,
     text: g.project,
     x: leftPad,
-    y: yCursor + ROW_PAD + titleLH,             // Baseline 1. Zeile
+    y: yCursor + ROW_PAD + titleLH - 4,             // Baseline 1. Zeile
     maxWidth: availW,
     lineHeight: titleLH,
     maxHeight: maxH,
@@ -1082,8 +1094,8 @@ g.appendChild(t2);
   });
 
   // Sub (Bereichspfad) – bekommt den restlichen Platz
-  const subFontMeasure = '400 13px -apple-system, Segoe UI, Roboto, Helvetica, Arial';
-  const subLH = 16; // px
+  const subFontMeasure = '400 14px Inter, sans-serif';
+  const subLH = 18; // px
   const remainingH = Math.max(0, maxH - usedH1 - 4);
 
   if (remainingH > 0) {
@@ -1091,11 +1103,11 @@ g.appendChild(t2);
       parent: svg,
       text: g.area,
       x: leftPad,
-      y: yCursor + ROW_PAD + usedH1 + 4 + subLH,
+      y: yCursor + ROW_PAD + usedH1 + subLH - 4,
       maxWidth: availW,
       lineHeight: subLH,
       maxHeight: remainingH,
-      className: 'small label-sub',
+      className: 'label-sub',
       fontForMeasure: subFontMeasure,
     });
   }
@@ -1123,7 +1135,7 @@ g.appendChild(t2);
 
     // Heute-Linie
     rightG.appendChild(sx(document.createElementNS(svgNS, "line"), {
-      x1: todayOffset, y1: 0, x2: todayOffset, y2: rowHeight, stroke: "#ff5a5f", "stroke-width": 2
+      x1: todayOffset, y1: 0, x2: todayOffset, y2: rowHeight, stroke: "#f43f5e", "stroke-width": 2
     }));
 
     // Monats-Trenner (dicker)
@@ -1146,33 +1158,86 @@ g.appendChild(t2);
 
         // Diamant
         const cx = lay?.cx ?? (diffWorkdays(from, it._sC) * DW + DW/2);
-        const d = `M ${cx} ${laneTop + (LABEL_H/2) - MS/2}
-                   l ${MS/2} ${MS/2} l ${-MS/2} ${MS/2}
-                   l ${-MS/2} ${-MS/2} Z`;
-        const diamond = sx(document.createElementNS(svgNS, "path"), {
-          d, fill: it.color, stroke: "rgba(0,0,0,0.10)", "stroke-width": 1
-        });
-        rightG.appendChild(diamond);
+        const cy = laneTop + (LABEL_H/2);
+        
+        // Status bestimmen
+        const isDone = it.done || it.status === 1 || it.progress === 100;
+        const isOverdue = !isDone && it._sC < today;
+        const type = isDone ? "completed" : (isOverdue ? "overdue" : "upcoming");
 
-        // Pill-Label (immer rechts)
-        const pillLeft = (lay ? lay.left : (cx + MS/2 + 6));
-        const pillW    = (lay ? lay.width : Math.max(60, Math.min(Math.max(120, DW*4), timelineWidth - pillLeft)));
-        const parsed   = parseAnyColor(it.color);
-        const pillBg  = parsed ? `rgba(${parsed.r},${parsed.g},${parsed.b},0.12)` : "rgba(0,0,0,0.06)";
-        const pillBor = parsed ? `rgba(${parsed.r},${parsed.g},${parsed.b},0.35)` : "rgba(0,0,0,0.1)";
+        const outerDiamondColor = it.color || "#3fbcf0"; 
+        const innerDiamondColor = darkenColor(outerDiamondColor, 30); 
+        const pillBgColor = getLightColor(type, outerDiamondColor); 
+        
+        const labelText = it.name || "Meilenstein";
+        const labelWidth = (lay ? lay.width : Math.max(60, Math.min(Math.max(120, DW*4), timelineWidth - (cx + MS/2 + 6))));
+        const pillH = LABEL_H;
 
-
- const msR = Math.max(1, Math.min(LABEL_H / 2 - 0.01, pillW / 2 - 0.01));
- rightG.appendChild(sx(document.createElementNS(svgNS, "rect"), {
-   x: pillLeft, y: laneTop, rx: msR, ry: msR, width: pillW, height: LABEL_H,
-          fill: pillBg, stroke: pillBor, "stroke-width": 1
+        // Pill Container (Hintergrund-Rechteck)
+        const msR = 6;
+        rightG.appendChild(sx(document.createElementNS(svgNS, "rect"), {
+          x: cx, y: cy - pillH/2, rx: msR, ry: msR, width: labelWidth, height: pillH,
+          fill: pillBgColor
         }));
+
+        // Label Text
         const t = sx(document.createElementNS(svgNS, "text"), {
-          x: pillLeft + 10, y: laneTop + LABEL_H/2, "dominant-baseline":"middle"
+          x: cx + 24, y: cy, "dominant-baseline": "middle",
+          fill: "black", "font-size": "11", "font-weight": "600"
         });
-        t.setAttribute("class","small label-strong");
-        t.appendChild(tnode(it.name));
+        t.style.fontFamily = "Inter, sans-serif";
+        t.appendChild(tnode(labelText));
         rightG.appendChild(t);
+
+        // Diamond (Raute) - links überlagert
+        // Outer Diamond
+        const outerMS = 18;
+        const dOuter = `M ${cx} ${cy - outerMS/2} l ${outerMS/2} ${outerMS/2} l ${-outerMS/2} ${outerMS/2} l ${-outerMS/2} ${-outerMS/2} Z`;
+        rightG.appendChild(sx(document.createElementNS(svgNS, "path"), {
+          d: dOuter, fill: outerDiamondColor
+        }));
+
+        // Inner Diamond
+        const innerMS = 15;
+        const dInner = `M ${cx} ${cy - innerMS/2} l ${innerMS/2} ${innerMS/2} l ${-innerMS/2} ${innerMS/2} l ${-innerMS/2} ${-innerMS/2} Z`;
+        rightG.appendChild(sx(document.createElementNS(svgNS, "path"), {
+          d: dInner, fill: innerDiamondColor
+        }));
+
+        // Status Icons
+        if (type === "completed") {
+          const check = sx(document.createElementNS(svgNS, "path"), {
+            d: `M ${cx - 4.5} ${cy} l 3 3 l 6 -6`,
+            fill: "none", stroke: "white", "stroke-width": 2.2, "stroke-linecap": "round", "stroke-linejoin": "round"
+          });
+          check.setAttribute("transform", "scale(0.7) translate(" + (cx*0.428) + "," + (cy*0.428) + ")");
+          // Da wir hier direkt SVG Pfade bauen, ist scale etwas tricky. Wir passen die Pfad-Koordinaten direkt an oder nutzen transform.
+          // Einfacher: Koordinaten direkt berechnen.
+          const checkPath = sx(document.createElementNS(svgNS, "path"), {
+            d: `M ${cx - 4} ${cy} l 2.5 2.5 l 5 -5`,
+            fill: "none", stroke: "white", "stroke-width": 2, "stroke-linecap": "round", "stroke-linejoin": "round"
+          });
+          rightG.appendChild(checkPath);
+        } else if (type === "overdue") {
+          const exclamation = sx(document.createElementNS(svgNS, "text"), {
+            x: cx, y: cy, "text-anchor": "middle", "dominant-baseline": "middle",
+            fill: "white", "font-size": "12", "font-weight": "900"
+          });
+          exclamation.style.fontFamily = "Inter, sans-serif";
+          exclamation.appendChild(tnode("!"));
+          rightG.appendChild(exclamation);
+        } else {
+          // Upcoming / Clock
+          const circle = sx(document.createElementNS(svgNS, "circle"), {
+            cx: cx, cy: cy, r: 4, fill: "none", stroke: "white", "stroke-width": 1.5
+          });
+          rightG.appendChild(circle);
+          const hands = sx(document.createElementNS(svgNS, "path"), {
+            d: `M ${cx} ${cy} l 0 -2.5 M ${cx} ${cy} l 2 0`,
+            fill: "none", stroke: "white", "stroke-width": 1.5, "stroke-linecap": "round"
+          });
+          rightG.appendChild(hands);
+        }
         return;
       }
 
@@ -1220,9 +1285,7 @@ const txt = sx(document.createElementNS(svgNS, "text"), {
 txt.setAttribute("fill", textColorForBg(it.color));          // Farbe aus Kontrastfunktion
 txt.setAttribute("font-size", "12");
 txt.setAttribute("font-weight", "600");
-txt.setAttribute("font-family",
-  '-apple-system, Segoe UI, Roboto, Helvetica, Arial'
-);
+txt.setAttribute("font-family", "Inter, sans-serif");
 
 txt.appendChild(tnode(it.name));
 gClip.appendChild(txt);
@@ -1355,7 +1418,6 @@ await svg2pdfFn(svg, pdf, {
 pdf.setProperties({ title: 'MultiProzesse' });
 
 
-const todayStr = new Date().toISOString().slice(0,10);
 pdf.save(`MultiProzesse_${todayStr}.pdf`);
 
 
@@ -1371,56 +1433,32 @@ pdf.save(`MultiProzesse_${todayStr}.pdf`);
     <div className="w-full">
       {/* Titelzeile */}
       <div className="flex items-center gap-3 mb-4">
-        <FaCalendarAlt className="text-[#00e0d6]" />
-        <h2 className="text-2xl font-semibold">Prozesse (–2 Wochen / +6 Wochen)</h2>
-        <span className="text-xs text-gray-400">
+        <h2 className="text-sm font-semibold">Prozesse (–2 Wochen / +6 Wochen)</h2>
+        <span className="text-sm text-gray-400">
           Zeitraum: {fmtShort(from)} – {fmtShort(to)}
         </span>
-        <span className="text-xs text-gray-500">• {groups.reduce((n,g)=>n+g.items.length,0)} Einträge</span>
+        <span className="text-sm text-gray-500">• {groups.reduce((n,g)=>n+g.items.length,0)} Einträge</span>
         <div className="ml-auto flex items-center gap-2">
           <button
             onClick={() => setShowResourceCurve(v => !v)}
-            className={`px-3 py-2 rounded-md text-sm font-medium border shadow ${showResourceCurve ? 'bg-[#00e0d6] text-black border-transparent' : 'bg-black/80 hover:bg-black text-white border-black/20'}`}
+            className={`h-9 px-4 rounded-md text-sm font-medium transition-colors flex items-center gap-2 border ${
+              showResourceCurve 
+                ? 'bg-zinc-900 text-white border-zinc-900 hover:bg-zinc-800' 
+                : 'bg-white text-zinc-900 border-zinc-200 hover:bg-zinc-50'
+            }`}
             title="Ressourcenkurve (Personen/Tag) ein-/ausblenden"
           >
-            {showResourceCurve ? 'Ressourcenkurve: AN' : 'Ressourcenkurve: AUS'}
+            <FaChartLine className={`h-4 w-4 ${showResourceCurve ? 'text-[#00e0d6]' : 'text-zinc-500'}`} />
+            <span>Ressourcenkurve</span>
           </button>
-
-          {/* Größe der Ressourcenkurve einstellen */}
-          <div className="flex items-center gap-2 text-xs text-gray-600">
-            <span className="hidden sm:inline">Höhe:</span>
-            <input
-              type="range"
-              min={24}
-              max={200}
-              step={2}
-              value={RESOURCE_H}
-              onChange={(e) => setRESOURCE_H(Number(e.target.value))}
-              className="w-28 accent-[#00e0d6]"
-              title={`Höhe der Ressourcenkurve: ${RESOURCE_H}px`}
-            />
-            <input
-              type="number"
-              min={24}
-              max={200}
-              step={2}
-              value={RESOURCE_H}
-              onChange={(e) => {
-                const n = Number(e.target.value);
-                if (isFinite(n)) setRESOURCE_H(Math.max(24, Math.min(200, n)));
-              }}
-              className="w-16 px-1 py-1 rounded border border-gray-300 text-gray-800 bg-white"
-              title="Höhe der Ressourcenkurve in Pixel"
-            />
-            <span className="text-gray-500">px</span>
-          </div>
 
           <button
             onClick={() => setShowLogoModal(true)}
-            className="px-3 py-2 rounded-md bg-black/80 hover:bg-black text-white text-sm font-medium border border-black/20 shadow"
+            className="h-9 px-4 rounded-md bg-white text-zinc-900 text-sm font-medium border border-zinc-200 hover:bg-zinc-50 transition-colors flex items-center gap-2"
             title="Plan als PDF exportieren"
           >
-            📄 PDF exportieren
+            <FaFilePdf className="h-4 w-4 text-red-500" />
+            <span>PDF exportieren</span>
           </button>
         </div>
      </div>
@@ -1503,7 +1541,11 @@ pdf.save(`MultiProzesse_${todayStr}.pdf`);
       }}
     >
       {/* Header links (sticky) */}
-      <div className="sticky top-0 left-0 z-20 bg-slate-50 px-4 py-3 text-[11px] leading-none uppercase tracking-wide text-slate-600 border-b border-r border-slate-200" data-pdf-text>
+      <div 
+        className="sticky top-0 left-0 z-20 bg-slate-50 px-4 flex items-center text-[11px] font-semibold uppercase tracking-wide text-slate-600 border-b border-r border-slate-200" 
+        style={{ height: headerH }}
+        data-pdf-text
+      >
         Projekt / Bereich
       </div>
 
@@ -1751,43 +1793,57 @@ pdf.save(`MultiProzesse_${todayStr}.pdf`);
       <div className="absolute top-0 bottom-0 border-l-2 border-rose-500" style={{ left: todayOffset }} title="Heute" />
     </div>
 
-    {/* Monatslabels (links im Band) */}
-    <div className="absolute left-0 right-0" style={{ top: (showResourceCurve ? RESOURCE_H : 0) + 4, height: MONTH_H - 8, pointerEvents: "none" }}>
-      {months.map((m, i) => (
-        <div
-          key={`m-label-${i}`}
-          className="absolute flex items-center"
-          style={{
-            left: m.startIdx * dayWidth + 6,
-            width: Math.max(80, m.span * dayWidth - 12),
-            height: MONTH_H - 8,
-          }}
-        >
-          <span className="month-label">{m.label}</span>
-        </div>
-      ))}
-    </div>
-
-    {/* KW-Zeile mit Datum von–bis (Mo–So) */}
-    <div className="absolute left-0 right-0" style={{ top: (showResourceCurve ? RESOURCE_H : 0) + MONTH_H + GAP_H, height: KW_H }}>
+    {/* Monatslabels / Wochen-Info (Obere Zeile) */}
+    <div className="absolute left-0 right-0 timeline-header-top" style={{ top: (showResourceCurve ? RESOURCE_H : 0), height: MONTH_H }}>
       {weeks.map((w, i) => {
         const ws = days[w.idx];
         const we = endOfISOWeek(ws);
+        
+        // Monate in dieser Woche sammeln (z.B. "Feb / Mär")
+        const monthsInWeek = [];
+        const mStart = format(ws, "MMM", { locale: de });
+        const mEnd = format(we, "MMM", { locale: de });
+        monthsInWeek.push(mStart);
+        if (mStart !== mEnd) monthsInWeek.push(mEnd);
+        const monthStr = monthsInWeek.join(" / ");
+        const yearStr = format(ws, "yyyy");
+
         return (
           <div
-            key={`kw-${w.idx}`}
-            className="absolute kw-chip"
+            key={`w-label-${i}`}
+            className="absolute flex items-center px-3 border-r border-slate-300 h-full"
             style={{
-              left: w.idx * dayWidth + 4,
-              top: 0,
-              width: dayWidth * 7 - 8, // Woche breit
-              height: KW_H,
+              left: w.idx * dayWidth,
+              width: dayWidth * 5,
             }}
           >
-            <span className="kw-badge">KW&nbsp;{w.no}</span>
-            <span className="kw-range">
-              {fmtDM(ws)}&nbsp;–&nbsp;{fmtDM(we)}
-            </span>
+            <span className="font-bold text-[14px] mr-2 whitespace-nowrap text-slate-900">{w.no} CW</span>
+            <span className="text-[12px] text-slate-600 ml-2 whitespace-nowrap">{monthStr}</span>
+            <span className="text-[12px] text-slate-600 ml-auto whitespace-nowrap">{yearStr}</span>
+          </div>
+        );
+      })}
+    </div>
+
+    {/* Tageslabels (Untere Zeile) */}
+    <div className="absolute left-0 right-0 timeline-header-bottom" style={{ top: (showResourceCurve ? RESOURCE_H : 0) + MONTH_H, height: KW_H }}>
+      {days.map((d, i) => {
+        const isToday = format(d, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd');
+        const dayNum = format(d, "d");
+        const dayName = format(d, "EEEEEE", { locale: de }); // Mo, Di, ...
+        const isWeekend = d.getDay() === 0 || d.getDay() === 6;
+
+        return (
+          <div
+            key={`day-label-${i}`}
+            className={`absolute flex items-center justify-center text-[11px] border-r border-slate-200 h-full ${isToday ? 'text-blue-700 font-bold bg-blue-50/50' : 'text-slate-700'} ${isWeekend ? 'bg-slate-100/30' : ''}`}
+            style={{
+              left: i * dayWidth,
+              width: dayWidth,
+              borderRightColor: d.getDay() === 0 ? '#94a3b8' : '#cbd5e1'
+            }}
+          >
+            {dayNum} {dayName}
           </div>
         );
       })}
@@ -1810,62 +1866,27 @@ pdf.save(`MultiProzesse_${todayStr}.pdf`);
   /* keine künstlichen Verschiebungen von Labels/Chips im Export */
   #export-root.exporting .bar-label,
   #export-root.exporting [data-pdf-text],
-  #export-root.exporting .kw-label,
-  #export-root.exporting .month-chip{
+  #export-root.exporting .kw-label{
     transform: none !important;
     line-height: 1 !important;
   }
 
 .month-divider{
-  border-left: 3px solid #94a3b8; /* slate-400 */
-  box-shadow: 0 0 0 1px rgba(0,0,0,0.02);
-  opacity: 0.9;
+  border-left: 1px solid #cbd5e1;
 }
 
-.month-label{
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: .06em;
-  text-transform: uppercase;
-  padding: 3px 10px;
-  border-radius: 9999px;
-  color: #0f172a; /* slate-900 */
-  background: linear-gradient(180deg, rgba(148,163,184,0.18), rgba(148,163,184,0.06));
-  border: 1px solid rgba(148,163,184,0.35);
-  box-shadow: 0 1px 0 rgba(0,0,0,0.02), inset 0 1px 0 rgba(255,255,255,0.4);
+.month-label, .kw-chip, .kw-badge, .kw-range {
+  display: none !important;
 }
 
-.kw-chip{
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 11px;
-  color: #475569; /* slate-600 */
-  padding: 0 6px;
-  border-radius: 8px;
-  /* „Glas“-Anmutung */
-  background: rgba(255,255,255,0.7);
-  border: 1px solid rgba(100,116,139,0.25);
-  box-shadow: 0 1px 1px rgba(0,0,0,0.04);
-}
-@supports (backdrop-filter: saturate(1.2) blur(3px)) {
-  .kw-chip{ backdrop-filter: saturate(1.2) blur(3px); }
+.timeline-header-top {
+  background-color: #f8fafc;
+  border-bottom: 1px solid #cbd5e1;
 }
 
-.kw-badge{
-  font-weight: 800;
-  letter-spacing: .03em;
-  text-transform: uppercase;
-  padding: 2px 6px;
-  border-radius: 9999px;
-  border: 1px solid rgba(100,116,139,0.35);
-  background: linear-gradient(180deg, rgba(241,245,249,0.9), rgba(226,232,240,0.6));
-  color: #0f172a;
-}
-
-.kw-range{
-  font-variant-numeric: tabular-nums;
-  opacity: .85;
+.timeline-header-bottom {
+  background-color: #f1f5f9;
+  border-bottom: 1px solid #cbd5e1;
 }
 
 
@@ -1940,11 +1961,11 @@ const msBlockH = msLaneCount
 const leftPadPX = 16, rightPadPX = 16;
 const availLeftW = Math.max(0, 380 - leftPadPX - rightPadPX);
 try {
-  const titleMeasureCtx = makeMeasureCtx('600 16px -apple-system, Segoe UI, Roboto, Helvetica, Arial');
-  const subMeasureCtx   = makeMeasureCtx('400 13px -apple-system, Segoe UI, Roboto, Helvetica, Arial');
+  const titleMeasureCtx = makeMeasureCtx('600 14px Inter, sans-serif');
+  const subMeasureCtx   = makeMeasureCtx('400 14px Inter, sans-serif');
   const titleLines = wrapLines(g.project || '', availLeftW, titleMeasureCtx);
   const subLines   = wrapLines(g.area || '', availLeftW, subMeasureCtx);
-  const labelsH    = ROW_PAD * 2 + (titleLines.length || 1) * LABEL_TITLE_LH + (subLines.length ? 4 + subLines.length * 16 : 0);
+  const labelsH    = ROW_PAD * 2 + (titleLines.length || 1) * 20 + (subLines.length ? 4 + subLines.length * 18 : 0);
   var rowHeight = Math.max(barsHeight + msBlockH, LABEL_MIN_H, labelsH);
 } catch (e) {
   var rowHeight = Math.max(barsHeight + msBlockH, LABEL_MIN_H);
@@ -1989,7 +2010,7 @@ try {
   <div
     className="font-medium text-slate-900"
     style={{
-      fontSize: 16,
+      fontSize: 14,
       lineHeight: "20px",
       whiteSpace: "normal",
       wordBreak: "break-word",
@@ -2004,7 +2025,7 @@ try {
   <div
     className="text-sm text-slate-500"
     style={{
-      fontSize: 13,
+      fontSize: 14,
       lineHeight: "18px",
       whiteSpace: "normal",
       wordBreak: "break-word",
@@ -2075,65 +2096,103 @@ if (isMilestone) {
   // Lane-Top (oberhalb der Balken)
   const msTop = ROW_PAD + (layout ? layout.lane : 0) * (LABEL_H + V_GAP);
 
-  // dezente Label-Farben aus Prozessfarbe
-  const parsed = typeof parseAnyColor === "function" ? parseAnyColor(it.color) : null;
-  const pillBg = parsed ? `rgba(${parsed.r},${parsed.g},${parsed.b},0.12)` : "rgba(0,0,0,0.06)";
-  const pillBorder = parsed ? `rgba(${parsed.r},${parsed.g},${parsed.b},0.35)` : "rgba(0,0,0,0.1)";
+  // Status bestimmen
+  const isDone = it.done || it.status === 1 || it.progress === 100;
+  const isOverdue = !isDone && it._sC < today;
+  const type = isDone ? "completed" : (isOverdue ? "overdue" : "upcoming");
+
+  const outerDiamondColor = it.color || "#3fbcf0"; 
+  const innerDiamondColor = darkenColor(outerDiamondColor, 30); 
+  const pillBgColor = getLightColor(type, outerDiamondColor); 
 
   const pillLeft  = layout ? layout.left  : (cx + MS / 2 + PAD);
   const pillWidth = layout ? layout.width : Math.max(LABEL_W_MIN, Math.min(LABEL_W, timelineWidth - (cx + MS / 2 + PAD)));
 
   return (
     <div key={`ms-${rowIdx}-${i}`}>
-      {/* Diamant zentriert auf der Lane */}
+      {/* Pill Container */}
       <div
         className="absolute"
         style={{
-          left: cx - MS / 2,
-          top:  msTop + (LABEL_H - MS) / 2,
-          width: MS,
-          height: MS,
-          backgroundColor: it.color,
-          transform: "rotate(45deg)",
-          borderRadius: 3,
-          boxShadow: "0 0 0 2px #fff inset, 0 0 0 1px rgba(0,0,0,0.1)",
-          zIndex: 3,
-        }}
-        title={`${it.name}
-${fmtShort(it.start)} → ${fmtShort(it.end)}
-${it.trade || ""}
-${(it.responsibles && it.responsibles.length) ? `\nResp: ${it.responsibles.join(", ")}` : ""}${(() => { const p = peopleByProcess && it.processId && peopleByProcess[g.project] && peopleByProcess[g.project][it.processId]; if (p == null) return ""; const total = typeof p === 'number' ? p : Object.entries(p).filter(([k]) => k !== "__total__").reduce((s,[,v]) => s + (Number(v)||0), 0); return `\nPersonen (gesamt aus Karten): ${total}`; })()}`}
-
-      />
-
-      {/* Label IMMER rechts, in eigener Lane */}
-      <div
-        className="absolute"
-        style={{
-          left:  pillLeft,
+          left:  cx,
           top:   msTop,
           width: pillWidth,
           height: LABEL_H,
-          display: "flex",
-          alignItems: "center",
-          lineHeight: `${LABEL_H}px`,
-          padding: "0 10px",
-          borderRadius: 9999,
-          background: pillBg,
-          border: `1px solid ${pillBorder}`,
-          color: "#111",
-          fontWeight: 700,
-          fontSize: 13,
-          whiteSpace: "nowrap",
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          boxShadow: "0 0 0 1px rgba(0,0,0,0.03)",
+          background: pillBgColor,
+          borderRadius: 6,
           zIndex: 2,
           pointerEvents: "none",
         }}
-        title={`${it.name}\n${fmtShort(it.start)} → ${fmtShort(it.end)}\n${it.trade || ""}${(() => { const p = peopleByProcess && it.processId && peopleByProcess[g.project] && peopleByProcess[g.project][it.processId]; if (p == null) return ""; const total = typeof p === 'number' ? p : Object.entries(p).filter(([k]) => k !== "__total__").reduce((s,[,v]) => s + (Number(v)||0), 0); return `\nPersonen (gesamt aus Karten): ${total}`; })()}` }
+      />
+
+      {/* Label Text */}
+      <div
+        className="absolute"
+        style={{
+          left:  cx + 24,
+          top:   msTop,
+          width: pillWidth - 24,
+          height: LABEL_H,
+          display: "flex",
+          alignItems: "center",
+          color: "black",
+          fontWeight: 600,
+          fontSize: 11,
+          fontFamily: "Inter, sans-serif",
+          whiteSpace: "nowrap",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          zIndex: 3,
+          pointerEvents: "none",
+        }}
       >
         {it.name}
+      </div>
+
+      {/* Diamond (Raute) */}
+      <div
+        className="absolute flex items-center justify-center"
+        style={{
+          left: cx - 9,
+          top:  msTop + (LABEL_H - 18) / 2,
+          width: 18,
+          height: 18,
+          backgroundColor: outerDiamondColor,
+          transform: "rotate(45deg)",
+          borderRadius: 4,
+          zIndex: 4,
+        }}
+        title={`${it.name}\n${fmtShort(it.start)} → ${fmtShort(it.end)}\n${it.trade || ""}`}
+      >
+        {/* Inner Diamond & Icon */}
+        <div
+          className="flex items-center justify-center"
+          style={{
+            width: 15,
+            height: 15,
+            backgroundColor: innerDiamondColor,
+            borderRadius: 3,
+            transform: "rotate(0deg)", // bleibt relativ zur äußeren Raute
+          }}
+        >
+          {/* Icons (nicht rotieren, damit sie gerade stehen) */}
+          <div style={{ transform: "rotate(-45deg)", display: "flex", alignItems: "center", justifyCenter: "center" }}>
+            {type === "completed" && (
+               <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
+                 <path d="M 2 6 L 5 9 L 10 3" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+               </svg>
+            )}
+            {type === "overdue" && (
+              <span style={{ color: "white", fontSize: "12px", fontWeight: "900", fontFamily: "Inter, sans-serif" }}>!</span>
+            )}
+            {type !== "completed" && type !== "overdue" && (
+              <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
+                <circle cx="6" cy="6" r="4" stroke="white" strokeWidth="1.5" />
+                <path d="M 6 6 L 6 3.5 M 6 6 L 8 6" stroke="white" strokeWidth="1.5" strokeLinecap="round" />
+              </svg>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -2246,7 +2305,7 @@ ${it.trade || ""}${(it.responsibles && it.responsibles.length) ? `\nResp: ${it.r
                 style={{
                   width: 12,
                   height: 12,
-                  color: parseAnyColor(it.color) ? it.color : "#16a34a",
+                  color: textColorForBg(it.color) === "#fff" ? "#16a34a" : "#15803d",
                 }}
               />
             </div>
@@ -2276,10 +2335,6 @@ ${it.trade || ""}${(it.responsibles && it.responsibles.length) ? `\nResp: ${it.r
         <div className="flex items-center gap-2">
           <span className="inline-block w-3 h-3 rounded-sm bg-[#ff5a5f]" />
           Heute
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="inline-block w-3 h-3 rounded-sm bg-white/10" />
-          Wochenenden leicht schattiert
         </div>
       </div>
     </div>

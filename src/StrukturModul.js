@@ -1,6 +1,10 @@
 import React, { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { FaChevronDown, FaChevronRight } from "react-icons/fa";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "./components/ui/card";
+import { Badge } from "./components/ui/badge";
+import { Progress } from "./components/ui/progress";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./components/ui/table";
 
 const StrukturModul = ({ data, selectedProject }) => {
   const [selectedTrade, setSelectedTrade] = useState(null);
@@ -217,120 +221,123 @@ const StrukturModul = ({ data, selectedProject }) => {
 
   if (!selectedTrade) {
     return (
-      <div className="p-6 font-inter text-white w-full">
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.5 }}
-          className="grid gap-4"
-        >
+      <div className="p-6 w-full">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {projektGewerke.map((gewerk) => {
             const info = gesamtStatusMap[gewerk];
             if (!info) return null;
             const status = info.totalDuration > 0 ? (info.tree.__meta?.__statusSum || 0) / info.totalDuration : 0;
             return (
-              <div
+              <Card
                 key={gewerk}
                 onClick={() => setSelectedTrade(gewerk)}
-                className="bg-[#1a1a1a] p-6 rounded-2xl shadow hover:bg-[#2a2a2a] cursor-pointer transition-all"
+                className="cursor-pointer hover:border-primary/50 transition-colors shadow-sm"
               >
-                <div className="text-2xl font-bold mb-4">{gewerk}</div>
-                <div className="w-full mb-2">
-                  <ProgressBar value={status} />
-                </div>
-                <div className="flex justify-between text-sm text-gray-400">
-                  <span>0 €</span>
-                  <span className="text-white font-medium">
-                    {((info.tree.__meta?.__statusSum || 0) / info.totalDuration * (auftragssummen[selectedProject]?.[gewerk] || 0)).toLocaleString("de-DE", { maximumFractionDigits: 0 })} €
-                  </span>
-                  <span>{auftragssummen[selectedProject]?.[gewerk]?.toLocaleString("de-DE", { maximumFractionDigits: 0 }) || "0"} €</span>
-                </div>
-                <div className="flex justify-between text-sm text-gray-400 mt-1">
-                  <span>0%</span>
-                  <span className="text-white font-medium">Abrechenbarer Anteil ({Math.round(status * 100)}%)</span>
-                  <span>100%</span>
-                </div>
-              </div>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-xl">{gewerk}</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-xs font-medium text-muted-foreground">
+                      <span>Fortschritt</span>
+                      <span>{Math.round(status * 100)}%</span>
+                    </div>
+                    <Progress value={status * 100} className="h-2" />
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div className="bg-muted p-2 rounded-md">
+                      <div className="text-muted-foreground mb-1 text-[10px] uppercase font-bold tracking-wider">Abrechenbar</div>
+                      <div className="font-bold text-sm">
+                        {((info.tree.__meta?.__statusSum || 0) / info.totalDuration * (auftragssummen[selectedProject]?.[gewerk] || 0)).toLocaleString("de-DE", { maximumFractionDigits: 0 })} €
+                      </div>
+                    </div>
+                    <div className="bg-muted p-2 rounded-md">
+                      <div className="text-muted-foreground mb-1 text-[10px] uppercase font-bold tracking-wider">Gesamt</div>
+                      <div className="font-bold text-sm">
+                        {auftragssummen[selectedProject]?.[gewerk]?.toLocaleString("de-DE", { maximumFractionDigits: 0 }) || "0"} €
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
             );
           })}
-        </motion.div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="p-6 font-inter text-white w-full">
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ duration: 0.5 }}
-        className="bg-[#1a1a1a] rounded-2xl p-6 shadow-xl"
-      >
-        <div className="flex justify-between items-center mb-4">
-          <button
-            onClick={() => setSelectedTrade(null)}
-            className="text-sm bg-[#00e0d6] text-black px-3 py-1 rounded hover:bg-[#00bfa5]"
-          >
-            ← Zurück
-          </button>
-          <div>
-            <label className="mr-2 text-sm">Nur abrechenbare Leistungen:</label>
-            <select
-              value={showOnlyProgress ? "true" : "false"}
-              onChange={(e) => setShowOnlyProgress(e.target.value === "true")}
-              className="bg-[#111] text-white border border-[#333] rounded px-2 py-1 text-sm"
+    <div className="p-6 w-full space-y-6">
+      <Card className="shadow-lg">
+        <CardHeader className="border-b pb-4">
+          <div className="flex justify-between items-center">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setSelectedTrade(null)}
+              className="gap-2"
             >
-              <option value="false">Alle</option>
-              <option value="true">Nur mit Status</option>
-            </select>
+              ← Zurück zur Übersicht
+            </Button>
+            <div className="flex items-center gap-3">
+              <label className="text-xs font-medium text-muted-foreground uppercase">Filter:</label>
+              <select
+                value={showOnlyProgress ? "true" : "false"}
+                onChange={(e) => setShowOnlyProgress(e.target.value === "true")}
+                className="bg-muted border rounded px-2 py-1 text-xs outline-none"
+              >
+                <option value="false">Alle Leistungen</option>
+                <option value="true">Nur abrechenbare</option>
+              </select>
+            </div>
           </div>
-        </div>
-        <div className="text-2xl font-bold mb-4">{selectedTrade}</div>
-        <div className="mb-6 w-full bg-[#111] rounded-xl p-4 border border-[#333]">
-          <div className="flex justify-between mb-2 text-sm text-gray-400">
-            <span>0 €</span>
-            <span className="text-white font-semibold">
-              {((currentInfo?.tree.__meta?.__statusSum || 0) / currentInfo.totalDuration * currentInfo.gewerkSumme).toLocaleString("de-DE", { maximumFractionDigits: 0 })} €
-            </span>
-            <span>{currentInfo.gewerkSumme.toLocaleString("de-DE") || "0"} €</span>
+          <div className="mt-4">
+            <CardTitle className="text-3xl font-bold">{selectedTrade}</CardTitle>
+            <CardDescription>Detaillierte Kostenstruktur und Leistungsstand.</CardDescription>
           </div>
-          <div className="w-full h-6 bg-[#333] rounded-full overflow-hidden border border-[#555] relative">
-            <div
-              className="h-full bg-[#00e0d6] transition-all"
-              style={{ width: `${Math.round(
-                currentInfo.totalDuration > 0
-                  ? (currentInfo.tree.__meta?.__statusSum || 0) / currentInfo.totalDuration * 100
-                  : 0
-              )}%` }}
-            ></div>
-            <span className="absolute inset-0 flex items-center justify-center text-sm text-white font-semibold">
-              {Math.round(
-                currentInfo.totalDuration > 0
-                  ? (currentInfo.tree.__meta?.__statusSum || 0) / currentInfo.totalDuration * 100
-                  : 0
-              )}%
-            </span>
+        </CardHeader>
+        <CardContent className="pt-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+            <div className="col-span-2 space-y-4">
+               <div className="space-y-2">
+                  <div className="flex justify-between items-end">
+                    <div className="text-sm font-semibold">Leistungsstand ({Math.round(
+                      currentInfo.totalDuration > 0
+                        ? (currentInfo.tree.__meta?.__statusSum || 0) / currentInfo.totalDuration * 100
+                        : 0
+                    )}%)</div>
+                    <div className="text-sm text-muted-foreground font-medium">
+                      {((currentInfo?.tree.__meta?.__statusSum || 0) / currentInfo.totalDuration * currentInfo.gewerkSumme).toLocaleString("de-DE", { maximumFractionDigits: 0 })} € von {currentInfo.gewerkSumme.toLocaleString("de-DE") || "0"} €
+                    </div>
+                  </div>
+                  <Progress 
+                    value={currentInfo.totalDuration > 0 ? (currentInfo.tree.__meta?.__statusSum || 0) / currentInfo.totalDuration * 100 : 0} 
+                    className="h-4"
+                  />
+               </div>
+            </div>
+
+            <div className="bg-muted/50 rounded-xl p-4 border flex flex-col justify-center">
+              <label className="text-[10px] font-bold uppercase text-muted-foreground mb-1 tracking-wider">Gesamte Auftragssumme</label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={inputValue || currentInfo.gewerkSumme.toLocaleString("de-DE") || ""}
+                  onChange={handleSummeChange}
+                  className="bg-background border rounded-md px-3 py-1.5 text-lg font-bold w-full focus:ring-2 focus:ring-primary outline-none transition-all"
+                />
+                <span className="font-bold text-xl text-muted-foreground">€</span>
+              </div>
+            </div>
           </div>
-          <div className="flex justify-between mt-2 text-sm text-gray-400">
-            <span>0%</span>
-            <span className="text-white font-medium">
-              Abrechenbarer Anteil: {((currentInfo?.tree.__meta?.__statusSum || 0) / currentInfo.totalDuration * currentInfo.gewerkSumme).toLocaleString("de-DE", { maximumFractionDigits: 0 })} €
-            </span>
-            <span>100%</span>
+
+          <div className="border rounded-lg overflow-hidden">
+            {renderNode(currentInfo.tree, "", 0, currentInfo.totalDuration, currentInfo.gewerkSumme, currentInfo.totalDuration)}
           </div>
-        </div>
-        <div className="mb-4 flex items-center gap-4">
-          <span className="text-sm text-gray-400">Auftragssumme</span>
-          <input
-            type="text"
-            value={inputValue || currentInfo.gewerkSumme.toLocaleString("de-DE") || ""}
-            onChange={handleSummeChange}
-            className="bg-[#111] border border-[#333] rounded px-2 py-1 text-sm text-white w-32"
-          />
-          <span className="text-sm text-gray-400">€</span>
-        </div>
-        {renderNode(currentInfo.tree, "", 0, currentInfo.totalDuration, currentInfo.gewerkSumme, currentInfo.totalDuration)}
-      </motion.div>
+        </CardContent>
+      </Card>
     </div>
   );
 };
