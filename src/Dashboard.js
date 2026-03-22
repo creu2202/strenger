@@ -38,9 +38,9 @@ const parseResponsibles = (val) => {
 };
 
 const PROJECTS = [
-    { name: "1090 - Mayerstraße", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=ffe2630e-c23c-4b93-85f3-cee98cb2cca1", projectId: "ffe2630e-c23c-4b93-85f3-cee98cb2cca1" },
-    { name: "Wagnerviertel", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=681e1f23-02ae-4f85-80c2-de6b72ecba9a", projectId: "681e1f23-02ae-4f85-80c2-de6b72ecba9a" },
-    { name: "Müllergasse", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=b8eb46b7-a1e2-46c6-9ccc-2d57b0b1be63", projectId: "b8eb46b7-a1e2-46c6-9ccc-2d57b0b1be63" },
+    { name: "Berlin", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=c200addc-f9f9-480e-8eb9-9329769ef859", projectId: "c200addc-f9f9-480e-8eb9-9329769ef859" },
+    { name: "Köln", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=7a3c9314-f7b3-4dfd-b878-4b9d30769377", projectId: "7a3c9314-f7b3-4dfd-b878-4b9d30769377" },
+    { name: "München", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=7dfbedbb-9966-469e-9c0c-6c9dfbf66516", projectId: "7dfbedbb-9966-469e-9c0c-6c9dfbf66516" },
 ];
 
 const TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI3N2U3OGMyMC0yNmVhLTQ3OWQtYjIzMS00MGRkNzIxYWZiNDEiLCJlbWFpbCI6ImNocmlzdGlhbi5yZXV0ZXJAbGNtZGlnaXRhbC5jb20iLCJ0cyI6NjQ4LCJsaWMiOnsiZWRpdCI6MX0sImlhdCI6MTc0MTE4MzQ5Mn0.a42tshg1OH8gzYu0AsEaeymx8ebWOdNA2rZzz9rdd1c";
@@ -48,24 +48,57 @@ const TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI3N2U3OGMyMC0yNmVh
 const fetchData = async () => {
   let projectData = {};
   for (const project of PROJECTS) {
-    const response = await fetch(project.url, {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${TOKEN}`,
-        Accept: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      },
-    });
-    const blob = await response.blob();
-    const data = await blob.arrayBuffer();
-    const workbook = XLSX.read(new Uint8Array(data), { type: "array" });
-    const sheetName = workbook.SheetNames[0];
-    const sheet = workbook.Sheets[sheetName];
-    projectData[project.name] = XLSX.utils.sheet_to_json(sheet);
+    try {
+      const response = await fetch(project.url, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${TOKEN}`,
+          Accept: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        },
+      });
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+      const blob = await response.blob();
+      const buffer = await blob.arrayBuffer();
+      const workbook = XLSX.read(new Uint8Array(buffer), { type: "array" });
+      const sheetName = workbook.SheetNames[0];
+      const sheet = workbook.Sheets[sheetName];
+      const rawItems = XLSX.utils.sheet_to_json(sheet);
+
+      // Normalisierung der Keys von Excel (Spaltennamen) zu Dashboard-Erwartung
+      const normalized = rawItems.map(item => {
+        const findVal = (row, keys) => {
+          for (const k of keys) {
+            const lowK = k.toLowerCase();
+            const actualKey = Object.keys(row).find(rk => rk.toLowerCase() === lowK);
+            if (actualKey) return row[actualKey];
+          }
+          return null;
+        };
+
+        return {
+          ...item,
+          "Process": findVal(item, ["Process", "ProcessName", "Process Name", "Vorgang", "Task", "Bezeichnung", "Titel", "Name"]),
+          "Start Date": findVal(item, ["Start Date", "Start", "StartDate", "Starttermin", "Anfang"]),
+          "End Date": findVal(item, ["End Date", "End", "EndDate", "Endtermin", "Finish"]),
+          "Trade": findVal(item, ["Trade", "Gewerk"]),
+          "Status": findVal(item, ["Status", "Progress", "Fortschritt"]),
+          "Process Id": findVal(item, ["Process Id", "ProcessID", "ProcessId", "Prozess Id", "ProzessID", "Process GUID", "Process Guid", "ProcessGUID", "ID"]),
+          "Bereich": findVal(item, ["Bereich", "Area", "Taktzone"]),
+          "Responsibles": findVal(item, ["Responsibles", "Responsible", "Verantwortlich", "Verantwortliche", "Verantwortliche(r)"]),
+          "Trade Color": findVal(item, ["Trade Background Color", "Trade BG Color", "Trade Color", "Gewerk Farbe", "TradeColor"])
+        };
+      });
+
+      projectData[project.name] = normalized;
+    } catch (error) {
+      console.error(`Error fetching project ${project.name}:`, error);
+      projectData[project.name] = [];
+    }
   }
   return projectData;
 };
 
-// Zusätzliche Karten-Daten (Tasks) laden: &cards=1 → Personen je Prozess-ID und Datum (Date-Spalte)
+// Zusätzliche Karten-Daten (Tasks) laden: &cards=1
 const fetchPeopleByProcess = async () => {
   const byProject = {};
   for (const project of PROJECTS) {
@@ -77,79 +110,63 @@ const fetchPeopleByProcess = async () => {
           Accept: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         },
       });
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
       const blob = await response.blob();
-      const buf = await blob.arrayBuffer();
-      const wb = XLSX.read(new Uint8Array(buf), { type: "array" });
-      const sheetName = wb.SheetNames[0];
-      const sheet = wb.Sheets[sheetName];
-      const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 }); // Array von Arrays
-
-      // Header-Indices robust ermitteln
-      const header = (rows[0] || []).map(h => String(h || "").trim());
-      const findIdx = (names, fallbackIdx) => {
-        const nameArr = Array.isArray(names) ? names : [names];
-        let idx = -1;
-        for (const n of nameArr) {
-          const i = header.findIndex(h => h.toLowerCase() === String(n).toLowerCase());
-          if (i >= 0) { idx = i; break; }
-        }
-        return idx >= 0 ? idx : fallbackIdx; // Fallback auf bekannte Position
-      };
-
-      const idxProcess = findIdx([
-        "Process Id","ProcessID","ProcessId","Prozess Id","ProzessID","Process GUID","Process Guid","ProcessGUID","ID"
-      ], 9); // bisher 10. Spalte
-      const idxPersons = findIdx(["Persons","Personen","People","Anzahl Personen","Ressourcen","Ressource"], 15); // bisher 16. Spalte
-      const idxDate = findIdx(["Date","Datum","Task Date","Card Date"], -1);
+      const buffer = await blob.arrayBuffer();
+      const workbook = XLSX.read(new Uint8Array(buffer), { type: "array" });
+      const sheetName = workbook.SheetNames[0];
+      const sheet = workbook.Sheets[sheetName];
+      const data = XLSX.utils.sheet_to_json(sheet);
 
       const map = {}; // processId -> (dateKey -> sum)
-      for (let i = 1; i < rows.length; i++) { // Header überspringen
-        const row = rows[i] || [];
-        const processId = row[idxProcess];
+      
+      for (const row of data) {
+        // Bei Excel sind die Keys die Spaltennamen der ersten Zeile
+        const findVal = (row, keys) => {
+          for (const k of keys) {
+            const lowK = k.toLowerCase();
+            const actualKey = Object.keys(row).find(rk => rk.toLowerCase() === lowK);
+            if (actualKey) return row[actualKey];
+          }
+          return null;
+        };
+
+        const processId = findVal(row, ["Process Id", "ProcessID", "ProcessId", "Prozess Id", "ProzessID", "Process GUID", "Process Guid", "ProcessGUID", "ID"]);
         if (!processId) continue;
 
-        const personsRaw = row[idxPersons];
+        const personsRaw = findVal(row, ["Persons", "Personen", "People", "Anzahl Personen", "Ressourcen", "Ressource"]);
         const num = Number(String(personsRaw ?? "").replace(",", ".").trim());
         const val = isFinite(num) ? num : null;
         if (val == null || val === 0) continue;
 
         let dateKey = null;
-        if (idxDate >= 0) {
-          const dRaw = row[idxDate];
-          if (dRaw != null && dRaw !== "") {
-            // XLSX kann Datum als Excel-Serienzahl liefern; versuchen zu parsen
-            let d;
-            if (typeof dRaw === "number") {
-              // Excel serial date -> JS Date (UTC offset vermeiden)
-              d = XLSX.SSF.parse_date_code(dRaw);
-              if (d) {
-                const y = d.y;
-                const m = String((d.m || 1)).padStart(2, "0");
-                const day = String((d.d || 1)).padStart(2, "0");
-                dateKey = `${y}-${m}-${day}`;
-              }
-            } else {
-              // String -> Date
-              const s = String(dRaw).trim();
-              const parsed = new Date(s);
-              if (!isNaN(parsed)) {
-                const y = parsed.getFullYear();
-                const m = String(parsed.getMonth() + 1).padStart(2, "0");
-                const day = String(parsed.getDate()).padStart(2, "0");
-                dateKey = `${y}-${m}-${day}`;
-              }
-            }
+        const dRaw = findVal(row, ["Date", "Datum", "Task Date", "Card Date"]);
+        if (dRaw) {
+          let parsed;
+          if (typeof dRaw === "number" && dRaw > 40000) {
+             const utc_days = Math.floor(dRaw - 25569);
+             const utc_value = utc_days * 86400;
+             parsed = new Date(utc_value * 1000);
+          } else {
+             parsed = new Date(dRaw);
+          }
+
+          if (!isNaN(parsed)) {
+            const y = parsed.getFullYear();
+            const m = String(parsed.getMonth() + 1).padStart(2, "0");
+            const day = String(parsed.getDate()).padStart(2, "0");
+            dateKey = `${y}-${m}-${day}`;
           }
         }
 
         const pid = String(processId);
         if (!map[pid]) map[pid] = {};
-        // Wenn kein Datum gefunden wurde, auf einen speziellen Schlüssel summieren (Kompatibilität)
         const key = dateKey || "__total__";
         map[pid][key] = (map[pid][key] || 0) + val;
       }
       byProject[project.name] = map;
     } catch (e) {
+      console.error(`Error fetching cards for ${project.name}:`, e);
       byProject[project.name] = {};
     }
   }
@@ -170,6 +187,7 @@ const Dashboard = () => {
   const [selectedBereiche, setSelectedBereiche] = useState([]);
   const [selectedResponsibles, setSelectedResponsibles] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
+  const [initialViewMode, setInitialViewMode] = useState(null);
 
   const [filtersOpen, setFiltersOpen] = useState(false);
 
@@ -263,6 +281,27 @@ const Dashboard = () => {
   const renderModule = () => {
     if (loading) return <p className="text-center text-gray-400 py-6">Lade Daten…</p>;
 
+    const handleProjectSelect = (projectName, targetTab = "progress", viewMode = null) => {
+      if (projectName === null) {
+        setSelectedProjects([]);
+      } else {
+        setSelectedProjects([projectName]);
+      }
+      setInitialViewMode(viewMode);
+      setActiveTab(targetTab);
+    };
+
+    const handleOpenInLCMD = (projectName, processId) => {
+      const project = PROJECTS.find(p => p.name === projectName);
+      if (project && project.projectId) {
+        let url = `https://share.lcmdigital.com/?project=${project.projectId}`;
+        if (processId) {
+          url += `&processid=${processId}`;
+        }
+        window.open(url, "_blank");
+      }
+    };
+
     const sharedProps = {
       data,
       projects: PROJECTS,
@@ -271,11 +310,14 @@ const Dashboard = () => {
       gewerkFilter: selectedGewerke,
       bereichFilter: selectedBereiche,
       responsiblesFilter: selectedResponsibles,
-      onTabChange: setActiveTab
+      onTabChange: setActiveTab,
+      onProjectSelect: handleProjectSelect,
+      onOpenInLCMD: handleOpenInLCMD,
+      initialViewMode
     };
     switch (activeTab) {
       case "overview": return <Overview {...sharedProps} />;
-      case "progress": return <Fortschritt {...sharedProps} selectedBauleiterProjects={{}} />;
+      case "progress": return <Fortschritt {...sharedProps} selectedBauleiterProjects={{}} onClearInitialMode={() => setInitialViewMode(null)} />;
       case "gantt": return <GanttChart {...sharedProps} />;
       case "tasks": return <HeutigeAufgaben {...sharedProps} />;
       case "milestones": return <Meilensteine {...sharedProps} />;
@@ -305,7 +347,7 @@ const Dashboard = () => {
           {/* Brand */}
           <div className="flex items-end gap-4">
             <div className="flex items-center bg-transparent rounded pb-0.5">
-              <Image src={Logo} alt="LCMD" className="h-6 w-auto invert" />
+              <Image src={Logo} alt="lcmd" className="h-6 w-auto invert" />
             </div>
             <div className="hidden lg:block">
               <h1 className="text-xl font-bold tracking-tight text-white leading-none">Projekt Portfolio</h1>

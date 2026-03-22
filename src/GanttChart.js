@@ -12,11 +12,17 @@ import {
   CardContent,
 } from "./components/ui/card";
 
-const excelDateToJSDate = (serial) => {
-  if (!serial || isNaN(serial)) return null;
-  const utc_days = Math.floor(serial - 25569);
-  const utc_value = utc_days * 86400;
-  return new Date(utc_value * 1000);
+const parseDate = (val) => {
+  if (!val) return null;
+  if (val instanceof Date && !isNaN(val)) return val;
+  const num = Number(val);
+  if (!isNaN(num) && num > 40000) { // Excel-Serienzahl
+    const utc_days = Math.floor(num - 25569);
+    const utc_value = utc_days * 86400;
+    return new Date(utc_value * 1000);
+  }
+  const d = new Date(val);
+  return isNaN(d) ? null : d;
 };
 
 const RESPONSIBLE_KEYS = [
@@ -76,8 +82,8 @@ const ChartContent = ({ data, selectedProjects, width, height, searchTerm, gewer
         }
         // ---------------
 
-        const start = excelDateToJSDate(row["Start Date"]);
-        const end = excelDateToJSDate(row["End Date"]);
+        const start = parseDate(row["Start Date"]);
+        const end = parseDate(row["End Date"]);
         const status = row["Status"];
 
         if (normalizedSearch) {
@@ -282,35 +288,35 @@ const ChartContent = ({ data, selectedProjects, width, height, searchTerm, gewer
       {tooltipData && (
         <TooltipWithBounds left={tooltipLeft} top={tooltipTop} style={{
           ...tooltipStyles,
-          backgroundColor: "hsl(var(--popover))",
-          color: "hsl(var(--popover-foreground))",
-          boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)",
-          border: "1px solid hsl(var(--border))",
+          backgroundColor: "#ffffff",
+          color: "#0f172a",
+          boxShadow: "0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)",
+          border: "1px solid #e2e8f0",
           borderRadius: "0.5rem",
           padding: "0.75rem",
           zIndex: 100,
         }}>
           <div className="flex flex-col gap-1.5">
-            <div className="font-bold border-b border-border pb-1 mb-1" style={tooltipHeaderStyle}>
+            <div className="font-bold border-b border-slate-100 pb-1.5 mb-1 text-slate-900">
               {tooltipData.project}
             </div>
-            <div className="grid grid-cols-[1.25rem_1fr] items-center gap-x-2 text-xs">
-              <span>📅</span>
-              <span>
-                <span className="text-muted-foreground">Start:</span>{" "}
-                <span className="font-medium">{tooltipData.start.toLocaleDateString("de-DE")}</span>
+            <div className="grid grid-cols-[1.25rem_1fr] items-center gap-y-1.5 text-xs">
+              <span className="text-sm">📅</span>
+              <span className="text-slate-600">
+                <span className="opacity-70">Start:</span>{" "}
+                <span className="font-semibold text-slate-900">{tooltipData.start.toLocaleDateString("de-DE")}</span>
               </span>
-              <span>🏁</span>
-              <span>
-                <span className="text-muted-foreground">Ende:</span>{" "}
-                <span className="font-medium">{tooltipData.end.toLocaleDateString("de-DE")}</span>
+              <span className="text-sm">🏁</span>
+              <span className="text-slate-600">
+                <span className="opacity-70">Ende:</span>{" "}
+                <span className="font-semibold text-slate-900">{tooltipData.end.toLocaleDateString("de-DE")}</span>
               </span>
-              <span>📊</span>
-              <span>
-                <span className="text-muted-foreground">Fortschritt:</span>{" "}
-                <span className="font-bold text-[#10b981]">{Math.round(tooltipData.progress)}%</span>
+              <span className="text-sm">📊</span>
+              <span className="text-slate-600">
+                <span className="opacity-70">Fortschritt:</span>{" "}
+                <span className="font-bold text-emerald-600">{Math.round(tooltipData.progress)}%</span>
               </span>
-              <span className="col-start-2 text-[10px] text-muted-foreground">
+              <span className="col-start-2 text-[10px] text-slate-400 italic">
                 ({tooltipData.completedProcesses} von {tooltipData.totalProcesses} Prozessen)
               </span>
             </div>

@@ -535,20 +535,51 @@ const yMax = height - margin.top - margin.bottom;
         <TooltipWithBounds
           top={tooltipTop}
           left={tooltipLeft}
-          style={tooltipStyles}
+          style={{
+            ...tooltipStyles,
+            backgroundColor: "#ffffff",
+            color: "#0f172a",
+            boxShadow: "0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)",
+            border: "1px solid #e2e8f0",
+            borderRadius: "0.5rem",
+            padding: "0.75rem",
+          }}
         >
-          <div className="text-sm">
-            <strong style={tooltipHeaderStyle}>{tooltipData.taktZone}</strong>
-            <div className="space-y-1">
-              <div>📍 Bereich: {tooltipData.taktZone}</div>
-              <div>📅 {tooltipData.start.toLocaleDateString("de-DE")} – {tooltipData.end.toLocaleDateString("de-DE")}</div>
-              <div className="mt-2 font-semibold">🧩 Prozesse:</div>
-              <ul className="list-disc ml-4">
-                {tooltipData.prozesse.slice(0, 5).map((p, i) => (
-                  <li key={i}>{p.Process} ({p.Trade})</li>
-                ))}
-                {tooltipData.prozesse.length > 5 && <li>...und mehr</li>}
-              </ul>
+          <div className="text-sm flex flex-col gap-1.5 min-w-[200px]">
+            <strong className="text-slate-900 border-b border-slate-100 pb-1.5 mb-0.5 block font-bold leading-tight" style={tooltipHeaderStyle}>
+              {tooltipData.taktZone}
+            </strong>
+            <div className="space-y-1.5 mt-0.5">
+              <div className="flex items-center gap-2 text-slate-600">
+                <span className="text-base shrink-0">📍</span> 
+                <span className="text-xs font-medium">Bereich: {tooltipData.taktZone}</span>
+              </div>
+              <div className="flex items-center gap-2 text-slate-600">
+                <span className="text-base shrink-0">📅</span> 
+                <span className="text-xs font-semibold text-slate-900">
+                  {tooltipData.start.toLocaleDateString("de-DE")} – {tooltipData.end.toLocaleDateString("de-DE")}
+                </span>
+              </div>
+              
+              <div className="mt-2 pt-1.5 border-t border-slate-50">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-base shrink-0">🧩</span> 
+                  <span className="text-xs font-bold text-slate-800 uppercase tracking-wider">Prozesse:</span>
+                </div>
+                <ul className="space-y-1 ml-1">
+                  {tooltipData.prozesse.slice(0, 5).map((p, i) => (
+                    <li key={i} className="flex items-start gap-1.5 text-[11px] text-slate-600 leading-tight">
+                      <span className="mt-1 w-1 h-1 rounded-full bg-slate-300 shrink-0" />
+                      <span>{p.Process} <span className="text-slate-400">({p.Trade})</span></span>
+                    </li>
+                  ))}
+                  {tooltipData.prozesse.length > 5 && (
+                    <li className="text-[10px] text-slate-400 italic ml-2.5">
+                      ...und {tooltipData.prozesse.length - 5} weitere
+                    </li>
+                  )}
+                </ul>
+              </div>
             </div>
           </div>
         </TooltipWithBounds>

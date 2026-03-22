@@ -44,11 +44,17 @@ import {
 } from "./components/ui/table";
 import { Badge } from "./components/ui/badge";
 
-const excelDateToJSDate = (serial) => {
-  if (!serial || isNaN(serial)) return null;
-  const utc_days = Math.floor(serial - 25569);
-  const utc_value = utc_days * 86400;
-  return new Date(utc_value * 1000);
+const parseDate = (val) => {
+  if (!val) return null;
+  if (val instanceof Date && !isNaN(val)) return val;
+  const num = Number(val);
+  if (!isNaN(num) && num > 40000) { // Excel-Serienzahl
+    const utc_days = Math.floor(num - 25569);
+    const utc_value = utc_days * 86400;
+    return new Date(utc_value * 1000);
+  }
+  const d = new Date(val);
+  return isNaN(d) ? null : d;
 };
 
 const getStatusBadge = (status) => {
@@ -250,13 +256,16 @@ const SimpleBarChart = ({ data, keys, colors, onClick, margin }) => {
         {/* Custom Tooltip */}
         {hoveredBar && (
           <div 
-            className="fixed z-[100] pointer-events-none bg-popover text-popover-foreground px-3 py-2 rounded-md shadow-md border text-sm flex flex-col gap-1 -translate-x-1/2 -translate-y-[calc(100%+8px)] animate-in fade-in zoom-in duration-150"
+            className="fixed z-[100] pointer-events-none bg-white text-slate-950 px-3 py-2 rounded-lg shadow-xl border border-slate-200 text-sm flex flex-col gap-1.5 -translate-x-1/2 -translate-y-[calc(100%+12px)] animate-in fade-in zoom-in duration-150"
             style={{ left: hoveredBar.x, top: hoveredBar.y }}
           >
-            <span className="font-semibold border-b pb-1 mb-1">{hoveredBar.project}</span>
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: hoveredBar.color }} />
-              <span className="text-xs">{hoveredBar.label}: <span className="font-bold">{hoveredBar.value}</span></span>
+            <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-white border-r border-b border-slate-200 rotate-45" />
+            <span className="font-bold text-slate-900 border-b border-slate-100 pb-1.5 mb-0.5">{hoveredBar.project}</span>
+            <div className="flex items-center gap-2.5">
+              <div className="w-2.5 h-2.5 rounded-full ring-2 ring-white shadow-sm" style={{ backgroundColor: hoveredBar.color }} />
+              <span className="text-xs font-medium text-slate-600">
+                {hoveredBar.label}: <span className="font-bold text-slate-900">{hoveredBar.value}</span>
+              </span>
             </div>
           </div>
         )}
@@ -280,7 +289,7 @@ const SimpleBarChart = ({ data, keys, colors, onClick, margin }) => {
   );
 };
 
-const Fortschritt = ({ data, projects, selectedBauleiterProjects, selectedProjects, searchTerm, gewerkFilter, bereichFilter, responsiblesFilter }) => {
+const Fortschritt = ({ data, projects, selectedBauleiterProjects, selectedProjects, searchTerm, gewerkFilter, bereichFilter, responsiblesFilter, initialViewMode, onClearInitialMode }) => {
   if (!data || Object.keys(data).length === 0) return <p className="text-muted-foreground text-lg p-6">Keine Daten verfügbar...</p>;
 
   const today = new Date();
@@ -356,8 +365,8 @@ const Fortschritt = ({ data, projects, selectedBauleiterProjects, selectedProjec
 
       const statusRaw = row["Status"];
       const progress = (statusRaw != null && statusRaw !== "") ? parseFloat(String(statusRaw).replace(",", ".")) * 100 : 0;
-      const startDate = excelDateToJSDate(row["Start Date"]);
-      const endDate = excelDateToJSDate(row["End Date"]);
+      const startDate = parseDate(row["Start Date"]);
+      const endDate = parseDate(row["End Date"]);
       const durationRaw = row["Duration"];
       const duration = (durationRaw != null && durationRaw !== "") ? parseFloat(String(durationRaw).replace(",", ".")) : 1;
 
@@ -377,7 +386,7 @@ const Fortschritt = ({ data, projects, selectedBauleiterProjects, selectedProjec
         overdue++;
         category = "overdue";
       } else if (startDate <= today && endDate >= today) {
-        if (progress >= expectedProgress) {
+        if (progress >= expectedProgress - 10) {
           onTrack++;
           category = "onTrack";
         } else {
@@ -442,6 +451,14 @@ const Fortschritt = ({ data, projects, selectedBauleiterProjects, selectedProjec
       planned: planned || 0,
     });
   });
+
+  useEffect(() => {
+    if (initialViewMode === "overdue" && allProcesses.length > 0) {
+      const overdueOnes = allProcesses.filter(p => p.status === "overdue");
+      setSelectedProcesses(overdueOnes);
+      if (onClearInitialMode) onClearInitialMode();
+    }
+  }, [initialViewMode, allProcesses.length, onClearInitialMode]);
 
   // WICHTIG: Sicherstellen, dass chartData absolut valide Zahlen enthält
   // und für jedes Projekt ALLE Keys vorhanden sind, um nivo/react-spring Fehler zu vermeiden.

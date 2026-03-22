@@ -21,10 +21,17 @@ import { Button } from "./components/ui/button";
 
 const DURATION_KEYS = ["Duration", "Dauer", "Dauer [d]", "Duration (d)"];
 
-const excelDateToJSDate = (serial) => {
-  const utc_days = Math.floor(serial - 25569);
-  const utc_value = utc_days * 86400;
-  return new Date(utc_value * 1000);
+const parseDate = (val) => {
+  if (!val) return null;
+  if (val instanceof Date && !isNaN(val)) return val;
+  const num = Number(val);
+  if (!isNaN(num) && num > 40000) { // Excel-Serienzahl
+    const utc_days = Math.floor(num - 25569);
+    const utc_value = utc_days * 86400;
+    return new Date(utc_value * 1000);
+  }
+  const d = new Date(val);
+  return isNaN(d) ? null : d;
 };
 
   const MilestoneChart = ({ data, milestoneData, projectOffsets, width, height, margin, today, filter, showTooltip, hideTooltip, tooltipData, tooltipLeft, tooltipTop, getColor, getLightColor, renderLcmMilestone }) => {
@@ -148,15 +155,37 @@ const excelDateToJSDate = (serial) => {
         <TooltipWithBounds
           left={tooltipLeft}
           top={tooltipTop}
-          style={tooltipStyles}
+          style={{
+            ...tooltipStyles,
+            backgroundColor: "#ffffff",
+            color: "#0f172a",
+            boxShadow: "0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)",
+            border: "1px solid #e2e8f0",
+            borderRadius: "0.5rem",
+            padding: "0.75rem",
+          }}
         >
-          <div className="text-sm">
-            <strong style={tooltipHeaderStyle}>{tooltipData.project}</strong>
-            <div className="space-y-1 mt-1">
-              <div>📌 {tooltipData.process}</div>
-              <div>🧰 {tooltipData.trade}</div>
-              <div>📅 {tooltipData.date.toLocaleDateString("de-DE")}</div>
-              <div className="font-medium text-blue-600">⏳ {tooltipData.daysUntilDue} Tage</div>
+          <div className="text-sm flex flex-col gap-1.5 min-w-[180px]">
+            <strong className="text-slate-900 border-b border-slate-100 pb-1.5 mb-0.5 block font-bold leading-tight" style={tooltipHeaderStyle}>
+              {tooltipData.project}
+            </strong>
+            <div className="space-y-1.5 mt-0.5">
+              <div className="flex items-start gap-2 text-slate-700 leading-tight">
+                <span className="text-base shrink-0">📌</span> 
+                <span className="font-medium text-[13px]">{tooltipData.process}</span>
+              </div>
+              <div className="flex items-center gap-2 text-slate-500">
+                <span className="text-base shrink-0">🧰</span> 
+                <span className="text-xs">{tooltipData.trade}</span>
+              </div>
+              <div className="flex items-center gap-2 text-slate-500">
+                <span className="text-base shrink-0">📅</span> 
+                <span className="text-xs font-semibold text-slate-900">{tooltipData.date.toLocaleDateString("de-DE")}</span>
+              </div>
+              <div className="flex items-center gap-2 pt-1 border-t border-slate-50 mt-1">
+                <span className="text-base shrink-0">⏳</span> 
+                <span className="text-xs font-bold text-blue-600">{tooltipData.daysUntilDue} Tage bis Fälligkeit</span>
+              </div>
             </div>
           </div>
         </TooltipWithBounds>
@@ -244,8 +273,8 @@ const Meilensteine = ({ data, projects, selectedProjects, gewerkFilter, bereichF
           if (!hit) return;
         }
 
-        const startDate = excelDateToJSDate(row["Start Date"]);
-        const endDate = excelDateToJSDate(row["End Date"]);
+        const startDate = parseDate(row["Start Date"]);
+        const endDate = parseDate(row["End Date"]);
         const progress = row["Status"] * 100;
         const daysUntilDue = Math.ceil((startDate - today) / (1000 * 60 * 60 * 24));
 
