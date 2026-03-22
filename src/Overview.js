@@ -17,17 +17,75 @@ import { Badge } from "./components/ui/badge";
 import { Button } from "./components/ui/button";
 import { cn } from "./components/ui/utils";
 
-const Overview = ({ data, projects, onTabChange, onProjectSelect, onOpenInLCMD, selectedProjects }) => {
+const Overview = ({ data, projects, onTabChange, onProjectSelect, onOpenInLCMD, selectedProjects, gewerkFilter, bereichFilter, responsiblesFilter, searchTerm }) => {
   
   const stats = useMemo(() => {
     if (!data) return null;
     const today = new Date();
+    const normalizedSearch = searchTerm?.toLowerCase().trim();
+
+    const RESPONSIBLE_KEYS = [
+      "Responsibles", "Responsible", "Verantwortlich", "Verantwortliche", "Verantwortliche(r)"
+    ];
+    const parseResponsibles = (val) => {
+      if (val == null && val !== 0) return [];
+      if (Array.isArray(val)) return val.map(String).map(s => s.trim()).filter(Boolean);
+      const s = String(val);
+      return s.split(/[\n,;\/|]+/g).map(t => t.trim()).filter(Boolean);
+    };
 
     return projects.map(project => {
       const projectRows = data[project.name] || [];
       
-      // Filter und Logik analog zu GanttChart.js
-      const processes = projectRows.map((row) => {
+      const DURATION_KEYS = ["Duration", "Dauer", "Dauer [d]", "Duration (d)"];
+      
+      // Filter und Logik analog zu Meilensteine.js
+      const processes = projectRows.filter((row) => {
+        const processName = (row["Process"] || "").toString();
+        const tradeName = (row["Trade"] || "").toString();
+        const id = (row["ID"] || "").toString();
+
+        // --- FILTERS (analog zu Meilensteine.js) ---
+        if (gewerkFilter && gewerkFilter.length > 0 && !gewerkFilter.includes(tradeName)) {
+          return false;
+        }
+
+        const rowBereich = row["Bereich"] || row["Area"] || "";
+        const rowTaktLevel1 = row["TaktZone Level 1"] || "";
+        const rowTaktLevel2 = row["TaktZone Level 2"] || "";
+        const rowTaktLevel3 = row["TaktZone Level 3"] || "";
+        const rowTaktLevel4 = row["TaktZone Level 4"] || "";
+
+        const areas = [
+          rowBereich,
+          rowTaktLevel1,
+          [rowTaktLevel1, rowTaktLevel2].filter(Boolean).join(" / "),
+          [rowTaktLevel1, rowTaktLevel2, rowTaktLevel3].filter(Boolean).join(" / "),
+          [rowTaktLevel1, rowTaktLevel2, rowTaktLevel3, rowTaktLevel4].filter(Boolean).join(" / ")
+        ].filter(Boolean);
+
+        if (bereichFilter && bereichFilter.length > 0) {
+          const hasAreaMatch = areas.some(a => bereichFilter.includes(a));
+          if (!hasAreaMatch) return false;
+        }
+
+        if (responsiblesFilter && responsiblesFilter.length > 0) {
+          const rowResponsibles = parseResponsibles(row.Responsibles ?? row.Responsible ?? row.Verantwortlich ?? row["Verantwortliche(r)"]);
+          const hasRespMatch = rowResponsibles.some(r => responsiblesFilter.includes(r));
+          if (!hasRespMatch) return false;
+        }
+
+        if (normalizedSearch) {
+          const hit = 
+            project.name.toLowerCase().includes(normalizedSearch) ||
+            processName.toLowerCase().includes(normalizedSearch) ||
+            tradeName.toLowerCase().includes(normalizedSearch) ||
+            id.toLowerCase().includes(normalizedSearch);
+          
+          if (!hit) return false;
+        }
+        return true;
+      }).map((row) => {
         const parseDate = (val) => {
           if (!val) return null;
           if (val instanceof Date && !isNaN(val)) return val;
@@ -43,7 +101,25 @@ const Overview = ({ data, projects, onTabChange, onProjectSelect, onOpenInLCMD, 
         const start = parseDate(row["Start Date"]);
         const end = parseDate(row["End Date"]);
         const status = row["Status"];
-        return { start, end, status, row };
+
+        let durationDays = null;
+        for (const k of DURATION_KEYS) {
+          const v = row[k];
+          if (v != null && v !== "") {
+            const num = Number(String(v).replace(",", "."));
+            if (isFinite(num)) { durationDays = Math.max(0, Math.round(num)); break; }
+          }
+        }
+        if (durationDays == null) {
+          if (start && end) {
+            const diff = Math.round((new Date(end).setHours(0,0,0,0) - new Date(start).setHours(0,0,0,0)) / 86400000);
+            durationDays = Math.max(0, diff + 1);
+          } else {
+            durationDays = 0;
+          }
+        }
+
+        return { start, end, status, durationDays, row };
       }).filter(p => p.start && p.end);
 
       const startDates = processes.map(p => p.start);
@@ -74,11 +150,8 @@ const Overview = ({ data, projects, onTabChange, onProjectSelect, onOpenInLCMD, 
         // Überfällige Prozesse: Ende in der Vergangenheit und Status nicht abgeschlossen (1)
         overdueProcessesCount = processes.filter(p => p.end < today && p.status !== 1).length;
 
-        // Meilensteine: Definition analog zu Meilensteine.js (Duration = 0)
-        const milestones = processes.filter(({ start, end }) => {
-          const diff = Math.round((end.setHours(0,0,0,0) - start.setHours(0,0,0,0)) / 86400000);
-          return diff === 0;
-        });
+        // Meilensteine: Definition analog zu Meilensteine.js (durationDays === 0)
+        const milestones = processes.filter(p => p.durationDays === 0);
         const completedMilestones = milestones.filter(m => m.status === 1).length;
 
         return {
@@ -98,23 +171,24 @@ const Overview = ({ data, projects, onTabChange, onProjectSelect, onOpenInLCMD, 
       return {
         id: project.projectId,
         name: project.name,
-        avgProgress: Math.round(avgProgress),
+        avgProgress: 0,
         expectedProgress: 0,
-        totalProcesses,
-        completedProcessesCount,
-        overdueProcessesCount,
+        totalProcesses: 0,
+        completedProcessesCount: 0,
+        overdueProcessesCount: 0,
         milestonesCount: 0,
         completedMilestones: 0,
         lastUpdate: "Heute"
       };
-    });
-  }, [data, projects]);
+    }).filter(Boolean);
+  }, [data, projects, selectedProjects, gewerkFilter, bereichFilter, responsiblesFilter, searchTerm]);
 
   const totalStats = useMemo(() => {
     if (!stats || stats.length === 0) return null;
     return {
       totalProjects: stats.length,
       avgTotalProgress: Math.round(stats.reduce((acc, s) => acc + s.avgProgress, 0) / stats.length),
+      avgExpectedProgress: Math.round(stats.reduce((acc, s) => acc + s.expectedProgress, 0) / stats.length),
       totalOverdueProcesses: stats.reduce((acc, s) => acc + s.overdueProcessesCount, 0),
       totalProcesses: stats.reduce((acc, s) => acc + s.totalProcesses, 0)
     };
@@ -178,7 +252,6 @@ const Overview = ({ data, projects, onTabChange, onProjectSelect, onOpenInLCMD, 
         </div>
       </div>
 
-      {/* Globale KPIs */}
       <motion.div 
         variants={containerVariants}
         initial="hidden"
@@ -187,7 +260,17 @@ const Overview = ({ data, projects, onTabChange, onProjectSelect, onOpenInLCMD, 
       >
         {[
           { label: "Aktive Projekte", value: totalStats.totalProjects, icon: Layers, color: "from-blue-600 to-indigo-600", bg: "bg-blue-500/10" },
-          { label: "Portfolio Fortschritt", value: `${totalStats.avgTotalProgress}%`, icon: BarChart3, color: "from-emerald-600 to-teal-600", bg: "bg-emerald-500/10", onClick: () => onProjectSelect ? onProjectSelect(null, "gantt") : onTabChange("gantt") },
+          { 
+            label: "Portfolio Fortschritt", 
+            value: `${totalStats.avgTotalProgress}%`, 
+            expectedValue: `${totalStats.avgExpectedProgress}%`,
+            diff: totalStats.avgTotalProgress - totalStats.avgExpectedProgress,
+            icon: BarChart3, 
+            color: "from-emerald-600 to-teal-600", 
+            bg: "bg-emerald-500/10", 
+            onClick: () => onProjectSelect ? onProjectSelect(null, "gantt") : onTabChange("gantt"),
+            isProgress: true
+          },
           { label: "Offene Verzögerungen", value: totalStats.totalOverdueProcesses, icon: Clock, color: "from-orange-500 to-red-600", bg: "bg-orange-500/10", onClick: () => onProjectSelect ? onProjectSelect(null, "progress", "overdue") : onTabChange("progress") },
         ].map((kpi, i) => (
           <motion.div key={i} variants={itemVariants}>
@@ -201,11 +284,43 @@ const Overview = ({ data, projects, onTabChange, onProjectSelect, onOpenInLCMD, 
               <div className={cn("absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 bg-gradient-to-br", kpi.color)} />
               <CardContent className="p-8 relative z-10">
                 <div className="flex items-center justify-between">
-                  <div>
+                  <div className="flex-1">
                     <p className="text-sm font-bold text-muted-foreground group-hover:text-white/80 transition-colors uppercase tracking-wider">{kpi.label}</p>
-                    <h3 className="text-4xl font-black mt-2 group-hover:text-white transition-colors">{kpi.value}</h3>
+                    <div className="flex items-center gap-4 mt-2">
+                      <h3 className="text-4xl font-black group-hover:text-white transition-colors leading-none">{kpi.value}</h3>
+                      {kpi.isProgress && (
+                        <div className="flex flex-col gap-1 flex-1 max-w-[140px]">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-bold text-muted-foreground group-hover:text-white/60 uppercase tracking-wider">Soll: {kpi.expectedValue}</span>
+                            {kpi.diff !== undefined && (
+                              <span className={cn(
+                                "text-[10px] font-black",
+                                kpi.diff >= 0 
+                                  ? "text-emerald-600 group-hover:text-white" 
+                                  : "text-red-500 group-hover:text-white"
+                              )}>
+                                {kpi.diff > 0 ? `+${kpi.diff}%` : `${kpi.diff}%`}
+                              </span>
+                            )}
+                          </div>
+                          <div className="w-full h-2 bg-slate-200 group-hover:bg-white/20 rounded-full overflow-hidden relative border border-slate-100/50 group-hover:border-white/10">
+                            <div 
+                              className={cn(
+                                "h-full transition-all duration-1000",
+                                kpi.diff >= 0 ? "bg-emerald-500 group-hover:bg-white" : "bg-red-500 group-hover:bg-white"
+                              )}
+                              style={{ width: kpi.value }}
+                            />
+                            <div 
+                              className="absolute top-0 h-full w-0.5 bg-slate-400 group-hover:bg-white/60 z-20"
+                              style={{ left: kpi.expectedValue }}
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                  <div className={cn("p-4 rounded-2xl transition-all duration-500 group-hover:bg-white/20 group-hover:scale-110", kpi.bg)}>
+                  <div className={cn("p-4 rounded-2xl transition-all duration-500 group-hover:bg-white/20 group-hover:scale-110 shrink-0", kpi.bg)}>
                     <kpi.icon className={cn("h-8 w-8 transition-colors group-hover:text-white", kpi.color.split(' ')[0].replace('from-', 'text-'))} />
                   </div>
                 </div>
@@ -370,7 +485,7 @@ const Overview = ({ data, projects, onTabChange, onProjectSelect, onOpenInLCMD, 
             </div>
             <h4 className="text-4xl font-black tracking-tight leading-tight">Ihre zentrale Projektsteuerung</h4>
             <p className="text-slate-400 max-w-lg text-lg">
-              Synchronisiert mit Echtzeitdaten aus <span className="text-white font-bold">LCMD digital</span>. Planen Sie vorausschauend mit der integrierten 6-Wochen-Vorschau.
+              Synchronisiert mit Echtzeitdaten aus Ihren <span className="text-white font-bold">lcmd Projekten</span>. Planen Sie vorausschauend mit der integrierten 6-Wochen-Vorschau.
             </p>
           </div>
           <Button 

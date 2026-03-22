@@ -80,8 +80,24 @@ const fmtDM = (d) =>
   d ? d.toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" }) : "–";
 
 
-// --- Farb-Utilities: parse + Kontrast-basierte Textfarbe --------------------
-const parseHex = (s) => {
+  // --- Farb-Utilities: parse + Kontrast-basierte Textfarbe --------------------
+  const buildAreaPaths = (row) => {
+    const rowBereich = row["Bereich"] || row["Area"] || "";
+    const rowTaktLevel1 = row["TaktZone Level 1"] || "";
+    const rowTaktLevel2 = row["TaktZone Level 2"] || "";
+    const rowTaktLevel3 = row["TaktZone Level 3"] || "";
+    const rowTaktLevel4 = row["TaktZone Level 4"] || "";
+
+    return [
+      rowBereich,
+      rowTaktLevel1,
+      [rowTaktLevel1, rowTaktLevel2].filter(Boolean).join(" / "),
+      [rowTaktLevel1, rowTaktLevel2, rowTaktLevel3].filter(Boolean).join(" / "),
+      [rowTaktLevel1, rowTaktLevel2, rowTaktLevel3, rowTaktLevel4].filter(Boolean).join(" / ")
+    ].filter(Boolean);
+  };
+
+  const parseHex = (s) => {
   const m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(s || "");
   if (!m) return null;
   let hex = m[1].toLowerCase();
@@ -237,9 +253,9 @@ const fmtShort = (d) =>
 const diffDays = (a, b) => differenceInCalendarDays(b, a);
 
 const inWindow = (start, end, from, to) => {
-  const sIn = start && start >= from && start <= to;
-  const eIn = end && end >= from && end <= to;
-  return sIn || eIn;
+  if (!start || !end) return false;
+  // Ein Vorgang ist im Fenster, wenn er sich mit dem Fenster überschneidet
+  return start <= to && end >= from;
 };
 
 // baut „Level 1 / Level 2 / …“ aus allen vorhandenen TaktZone-Levelspalten
@@ -323,8 +339,13 @@ export default function MultiProzesse({
 
 
   
+    const normalizedGewerkFilter = useMemo(
+      () => (gewerkFilter || []).map(g => String(g).trim()),
+      [gewerkFilter]
+    );
+
   const normalizedBereichFilter = useMemo(
-  () => (bereichFilter || []).map(b => String(b).toLowerCase().trim()),
+  () => (bereichFilter || []).map(b => String(b).trim()),
   [bereichFilter]
 );
 
@@ -410,11 +431,16 @@ const normalizedResponsiblesFilter = useMemo(                 // <— NEU
     const allowProjects =
       selectedProjects && selectedProjects.length > 0
         ? new Set(selectedProjects)
-        : new Set(Object.keys(data));
+        : null;
 
     const allowTrades =
-      gewerkFilter && gewerkFilter.length > 0
-        ? new Set(gewerkFilter.map((g) => String(g).trim()))
+      normalizedGewerkFilter && normalizedGewerkFilter.length > 0
+        ? new Set(normalizedGewerkFilter)
+        : null;
+
+    const allowBereiche =
+      normalizedBereichFilter && normalizedBereichFilter.length > 0
+        ? new Set(normalizedBereichFilter)
         : null;
 
     const allowResponsibles =                                  // <— NEU
@@ -426,28 +452,13 @@ const normalizedResponsiblesFilter = useMemo(                 // <— NEU
     const map = new Map();
 
     for (const projName of Object.keys(data)) {
-      if (!allowProjects.has(projName)) continue;
+      if (allowProjects && !allowProjects.has(projName)) continue;
 
 for (const p of data[projName] || []) {
-  // Fortschritt (robust: akzeptiert 0..1, 0..100, auch "85%")
-  const statusRaw = pick(p, STATUS_KEYS);
-  const toPercent = (v) => {
-    if (v == null || v === "") return null;
-    const s = String(v).replace("%", "").trim().replace(",", ".");
-    const num = Number(s);
-    if (!isFinite(num)) return null;
-    return num <= 1 ? Math.round(num * 100) : Math.round(num);
-  };
-  const progress = toPercent(statusRaw);          // 0..100 oder null
-  const done = progress !== null && progress >= 100;
-
   // Basisfelder
   const name  = (pick(p, NAME_KEYS) ?? "").toString().trim() || "(ohne Titel)";
   const trade = (pick(p, TRADE_KEYS) ?? "").toString().trim();
-  const colorRaw = pick(p, COLOR_KEYS);
-  const colorNorm = normalizeColor(colorRaw);
-  const color = colorNorm || colorForTrade(trade);
-
+  const areas = buildAreaPaths(p);
   const area = buildAreaPath(p);
 
 const s    = parseDate(pick(p, START_KEYS));
@@ -465,7 +476,8 @@ if (durRaw != null && durRaw !== "") {
 if (durationDays == null) {
   if (s && eRaw) {
     // inklusiv: beide Tage zählen
-    durationDays = Math.max(0, diffDays(s, eRaw) + 1);
+    const diff = Math.round((new Date(eRaw).setHours(0,0,0,0) - new Date(s).setHours(0,0,0,0)) / 86400000);
+    durationDays = Math.max(0, diff + 1);
   } else {
     durationDays = 0;
   }
@@ -473,25 +485,21 @@ if (durationDays == null) {
 
   const responsibles = parseResponsibles(pick(p, RESPONSIBLES_KEYS));
 
-  // Filter / Fenster
+  // --- FILTERS (analog zu Overview.js / Meilensteine.js) ---
   if (!s && !e) continue;
   if (!inWindow(s, e, from, to)) continue;
-  if (allowTrades && (!trade || !allowTrades.has(trade))) continue;
 
-  // NEU: Responsibles-Filter (case-insensitive, erlaubt Teiltreffer)
-  if (allowResponsibles) {
-    const respLower = responsibles.map(r => r.toLowerCase());
-    const hit = respLower.some(r =>
-      allowResponsibles.some(sel => r === sel || r.includes(sel))
-    );
-    if (!hit) continue;
+  if (allowTrades && !allowTrades.has(trade)) continue;
+
+  if (allowBereiche) {
+    const hasAreaMatch = areas.some(a => allowBereiche.has(a));
+    if (!hasAreaMatch) continue;
   }
 
-    if (normalizedBereichFilter.length > 0) {
-      const areaLower = String(area).toLowerCase();
-      const hit = normalizedBereichFilter.some(sel => areaLower === sel || areaLower.includes(sel));
-      if (!hit) continue;
-    }
+  if (allowResponsibles) {
+    const hasRespMatch = responsibles.some(r => allowResponsibles.includes(r.toLowerCase()));
+    if (!hasRespMatch) continue;
+  }
 
     // --- GLOBALER SEARCH FILTER ---
     if (normalizedSearchTerm) {
@@ -500,27 +508,47 @@ if (durationDays == null) {
       const areaLower = String(area).toLowerCase();
       const respLower = responsibles.map(r => r.toLowerCase());
       const projLower = projName.toLowerCase();
+      const idLower = (pick(p, ["ID"]) || "").toString().toLowerCase();
 
       const hit = 
         nameLower.includes(normalizedSearchTerm) ||
         tradeLower.includes(normalizedSearchTerm) ||
         areaLower.includes(normalizedSearchTerm) ||
         projLower.includes(normalizedSearchTerm) ||
+        idLower.includes(normalizedSearchTerm) ||
         respLower.some(r => r.includes(normalizedSearchTerm));
       
       if (!hit) continue;
     }
 
-    // Gruppe & Push
+  // Fortschritt (robust: akzeptiert 0..1, 0..100, auch "85%")
+  const statusRaw = pick(p, STATUS_KEYS);
+  const progress = toPercent(statusRaw);          // 0..100 oder null
+  const done = progress !== null && progress >= 100;
+
+  const colorRaw = pick(p, COLOR_KEYS);
+  const colorNorm = normalizeColor(colorRaw);
+  const color = colorNorm || colorForTrade(trade);
+
+    const isMilestone = durationDays === 0;
+
   const key = `${projName} :: ${area}`;
   if (!map.has(key)) map.set(key, { key, project: projName, area, items: [] });
 
   const processId = pick(p, PROCESS_ID_KEYS);
   map.get(key).items.push({
-    name, trade, start: s, end: e, color, progress, done,
+    name, 
+    trade, 
+    start: s, 
+    end: e, 
+    color, 
+    progress, 
+    done,
     durationDays,
+    isMilestone,
     responsibles,                                    // <— NEU (für Tooltip etc.)
     processId: processId != null ? String(processId) : undefined,
+    row: p
   });
 }
 
@@ -540,7 +568,7 @@ if (durationDays == null) {
     });
 
     return arr;
-  }, [data, selectedProjects, gewerkFilter, normalizedBereichFilter, normalizedResponsiblesFilter, from, to]);
+  }, [data, selectedProjects, normalizedGewerkFilter, normalizedBereichFilter, normalizedResponsiblesFilter, normalizedSearchTerm, from, to]);
 
 
 // Tagesliste über das Fenster
@@ -857,7 +885,7 @@ async function handleExportPDF() {
 
     const msItems = packed
       .map((it, i) => ({ it, i }))
-      .filter(({ it }) => (it.durationDays || 0) === 0)
+      .filter(({ it }) => it.isMilestone)
       .sort((a, b) => diffWorkdays(from, a.it._sC) - diffWorkdays(from, b.it._sC));
 
     const msLayout = new Map();
@@ -1149,7 +1177,7 @@ async function handleExportPDF() {
     const BAR_H2 = 28, V_GAP2 = 6;
 
     packed.forEach((it, i) => {
-      const isMilestone = (it.durationDays || 0) === 0;
+      const isMilestone = it.isMilestone;
 
       if (isMilestone) {
         const lay = msLayout.get(i);
@@ -1928,7 +1956,7 @@ const LABEL_X_GAP = 4;          // min. horizontaler Abstand zw. Labels
 // Milestones dieser Row (links -> rechts)
 const msItems = packed
   .map((it, i) => ({ it, i }))
-  .filter(({ it }) => (it.durationDays || 0) === 0)
+  .filter(({ it }) => it.isMilestone)
   .sort((a, b) => diffWorkdays(from, a.it._sC) - diffWorkdays(from, b.it._sC));
 
 // Greedy-Lanes nur für Labels (immer rechts vom Diamanten)
@@ -2086,8 +2114,8 @@ try {
   const width = Math.max(6, countWorkdaysInclusive(it._sC, it._eC) * dayWidth - 6);
   const top = ROW_PAD + msBlockH + it._lane * (BAR_H + V_GAP);
 
-  // 👉 Meilenstein? (Dauer 0 Tage)
-  const isMilestone = (it.durationDays || 0) === 0;
+  // 👉 Meilenstein?
+  const isMilestone = it.isMilestone;
 
 if (isMilestone) {
   const layout = msLayout.get(i); // aus dem Prepass
