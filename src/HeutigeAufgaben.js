@@ -1,6 +1,6 @@
 import React, { useMemo } from "react";
 import { FaRegCircle, FaTools, FaCheckCircle } from "react-icons/fa";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   Table,
   TableBody,

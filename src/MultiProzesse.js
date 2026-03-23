@@ -283,7 +283,7 @@ const colorForTrade = (trade) => {
     "HLS Planer": "#0db2a6",
     Architekt: "#0db2a6",
   };
-  return map[trade] || "#00e0d6";
+  return map[trade] || "#1e5bd8";
 };
 
 export default function MultiProzesse({
@@ -535,10 +535,10 @@ if (durationDays == null) {
   const key = `${projName} :: ${area}`;
   if (!map.has(key)) map.set(key, { key, project: projName, area, items: [] });
 
-  const processId = pick(p, PROCESS_ID_KEYS);
+  const processId = pick(p, PROCESS_ID_KEYS) || p.processId || p.processID || p.ProcessId || p.ProcessID || p.id || p.ID;
   map.get(key).items.push({
     name, 
-    trade, 
+    trade: trade || "Unbekannt", 
     start: s, 
     end: e, 
     color, 
@@ -624,13 +624,14 @@ const resourceByDayTrade = useMemo(() => {
   for (const g of groups) {
     const pplMap = peopleByProcess?.[g.project] || {};
     for (const it of g.items) {
-      if (!it.processId || !it.trade) continue;
+      if (!it.processId) continue;
+      const trade = it.trade || "Unbekannt";
       const entry = pplMap[it.processId];
       if (entry == null) continue;
 
-      if (!byTrade.has(it.trade)) byTrade.set(it.trade, new Array(len).fill(0));
-      if (!tradeColors.has(it.trade)) tradeColors.set(it.trade, it.color || colorForTrade(it.trade));
-      const arr = byTrade.get(it.trade);
+      if (!byTrade.has(trade)) byTrade.set(trade, new Array(len).fill(0));
+      if (!tradeColors.has(trade)) tradeColors.set(trade, it.color || colorForTrade(trade));
+      const arr = byTrade.get(trade);
 
       if (typeof entry === "number") {
         // Rückwärtskompatibilität: alte Struktur -> auf gesamte Dauer verteilen
@@ -1476,7 +1477,7 @@ pdf.save(`MultiProzesse_${todayStr}.pdf`);
             }`}
             title="Ressourcenkurve (Personen/Tag) ein-/ausblenden"
           >
-            <FaChartLine className={`h-4 w-4 ${showResourceCurve ? 'text-[#00e0d6]' : 'text-zinc-500'}`} />
+            <FaChartLine className={`h-4 w-4 ${showResourceCurve ? 'text-white' : 'text-zinc-500'}`} />
             <span>Ressourcenkurve</span>
           </button>
 
@@ -1628,8 +1629,8 @@ pdf.save(`MultiProzesse_${todayStr}.pdf`);
           {/* Hintergrund */}
           <defs>
             <linearGradient id="res-grad" x1="0" x2="0" y1="0" y2="1">
-              <stop offset="0%" stopColor="#00e0d6" stopOpacity="0.35" />
-              <stop offset="100%" stopColor="#00e0d6" stopOpacity="0.05" />
+              <stop offset="0%" stopColor="#1e5bd8" stopOpacity="0.35" />
+              <stop offset="100%" stopColor="#1e5bd8" stopOpacity="0.05" />
             </linearGradient>
           </defs>
           {/* vertikale Tageslinien dezent */}
@@ -1691,7 +1692,7 @@ pdf.save(`MultiProzesse_${todayStr}.pdf`);
             return (
               <g>
                 <path d={area} fill="url(#res-grad)" stroke="none" />
-                <path d={path} fill="none" stroke="#00e0d6" strokeWidth={2} />
+                <path d={path} fill="none" stroke="#1e5bd8" strokeWidth={2} />
                 {/* Heute Marker */}
                 <line x1={todayOffset} y1={0} x2={todayOffset} y2={RESOURCE_H} stroke="#ff5a5f" strokeWidth={2} />
                 {/* Hover Tag-Linie */}

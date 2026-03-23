@@ -131,10 +131,10 @@ const fetchPeopleByProcess = async () => {
           return null;
         };
 
-        const processId = findVal(row, ["Process Id", "ProcessID", "ProcessId", "Prozess Id", "ProzessID", "Process GUID", "Process Guid", "ProcessGUID", "ID"]);
+        const processId = findVal(row, ["Process Id", "ProcessID", "ProcessId", "Prozess Id", "ProzessID", "Process GUID", "Process Guid", "ProcessGUID", "ID"]) || row.processId || row.processID || row.ProcessId || row.ProcessID;
         if (!processId) continue;
 
-        const personsRaw = findVal(row, ["Persons", "Personen", "People", "Anzahl Personen", "Ressourcen", "Ressource"]);
+        const personsRaw = findVal(row, ["Workforce", "Persons", "Personen", "People", "Anzahl Personen", "Ressourcen", "Ressource"]) || row.Workforce || row.Persons || row.Personen || row.People;
         const num = Number(String(personsRaw ?? "").replace(",", ".").trim());
         const val = isFinite(num) ? num : null;
         if (val == null || val === 0) continue;
