@@ -155,7 +155,7 @@ const HeutigeAufgaben = ({ data, projects, selectedProjects, gewerkFilter, berei
     });
 
     return results;
-  }, [data, projects, selectedProjects, gewerkFilter, normalizedSearch]);
+  }, [data, projects, selectedProjects, gewerkFilter, bereichFilter, responsiblesFilter, searchTerm]);
 
   return (
     <div className="p-6 w-full max-w-[1600px] mx-auto space-y-8">

@@ -192,6 +192,10 @@ const Dashboard = () => {
   const [filtersOpen, setFiltersOpen] = useState(false);
 
   useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [activeTab]);
+
+  useEffect(() => {
     (async () => {
       try {
         const [fetchedData, peopleMap] = await Promise.all([

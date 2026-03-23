@@ -485,7 +485,7 @@ const Overview = ({ data, projects, onTabChange, onProjectSelect, onOpenInLCMD, 
             </div>
             <h4 className="text-4xl font-black tracking-tight leading-tight">Ihre zentrale Projektsteuerung</h4>
             <p className="text-slate-400 max-w-lg text-lg">
-              Synchronisiert mit Echtzeitdaten aus Ihren <span className="text-white font-bold">lcmd Projekten</span>. Planen Sie vorausschauend mit der integrierten 6-Wochen-Vorschau.
+              Synchronisiert mit Echtzeitdaten aus Ihren <span className="text-white font-bold">lcmd Projekten</span>. Planen Sie vorausschauend Ihre Ressourcen mit der integrierten 6-Wochen-Vorschau.
             </p>
           </div>
           <Button 
