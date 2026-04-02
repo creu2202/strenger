@@ -37,17 +37,32 @@ const parseResponsibles = (val) => {
   return s.split(/[\n,;\/|]+/g).map(t => t.trim()).filter(Boolean);
 };
 
-const PROJECTS = [
-    { name: "Berlin", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=c200addc-f9f9-480e-8eb9-9329769ef859", projectId: "c200addc-f9f9-480e-8eb9-9329769ef859" },
-    { name: "Köln", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=7a3c9314-f7b3-4dfd-b878-4b9d30769377", projectId: "7a3c9314-f7b3-4dfd-b878-4b9d30769377" },
-    { name: "München", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=7dfbedbb-9966-469e-9c0c-6c9dfbf66516", projectId: "7dfbedbb-9966-469e-9c0c-6c9dfbf66516" },
+const INITIAL_PROJECTS = [
+    { 
+      name: "Berlin", 
+      url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=c200addc-f9f9-480e-8eb9-9329769ef859", 
+      projectId: "c200addc-f9f9-480e-8eb9-9329769ef859",
+      image: null
+    },
+    { 
+      name: "Köln", 
+      url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=7a3c9314-f7b3-4dfd-b878-4b9d30769377", 
+      projectId: "7a3c9314-f7b3-4dfd-b878-4b9d30769377",
+      image: null
+    },
+    { 
+      name: "München", 
+      url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=7dfbedbb-9966-469e-9c0c-6c9dfbf66516", 
+      projectId: "7dfbedbb-9966-469e-9c0c-6c9dfbf66516",
+      image: null
+    },
 ];
 
 const TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI3N2U3OGMyMC0yNmVhLTQ3OWQtYjIzMS00MGRkNzIxYWZiNDEiLCJlbWFpbCI6ImNocmlzdGlhbi5yZXV0ZXJAbGNtZGlnaXRhbC5jb20iLCJ0cyI6NjQ4LCJsaWMiOnsiZWRpdCI6MX0sImlhdCI6MTc0MTE4MzQ5Mn0.a42tshg1OH8gzYu0AsEaeymx8ebWOdNA2rZzz9rdd1c";
 
-const fetchData = async () => {
+const fetchData = async (projects) => {
   let projectData = {};
-  for (const project of PROJECTS) {
+  for (const project of projects) {
     try {
       const response = await fetch(project.url, {
         method: "GET",
@@ -99,9 +114,9 @@ const fetchData = async () => {
 };
 
 // Zusätzliche Karten-Daten (Tasks) laden: &cards=1
-const fetchPeopleByProcess = async () => {
+const fetchPeopleByProcess = async (projects) => {
   const byProject = {};
-  for (const project of PROJECTS) {
+  for (const project of projects) {
     try {
       const response = await fetch(`${project.url}&cards=1`, {
         method: "GET",
@@ -175,6 +190,20 @@ const fetchPeopleByProcess = async () => {
 
 
 const Dashboard = () => {
+  const [projects, setProjects] = useState(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("dashboard_projects");
+      if (saved) {
+        try {
+          return JSON.parse(saved);
+        } catch (e) {
+          return INITIAL_PROJECTS;
+        }
+      }
+    }
+    return INITIAL_PROJECTS;
+  });
+
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [peopleByProcess, setPeopleByProcess] = useState(null);
@@ -199,8 +228,8 @@ const Dashboard = () => {
     (async () => {
       try {
         const [fetchedData, peopleMap] = await Promise.all([
-          fetchData(),
-          fetchPeopleByProcess(),
+          fetchData(projects),
+          fetchPeopleByProcess(projects),
         ]);
         setData(fetchedData);
         setPeopleByProcess(peopleMap);
@@ -210,7 +239,12 @@ const Dashboard = () => {
         setLoading(false);
       }
     })();
-  }, []);
+  }, [projects]);
+
+  const handleUpdateProjects = (newProjects) => {
+    setProjects(newProjects);
+    localStorage.setItem("dashboard_projects", JSON.stringify(newProjects));
+  };
 
   const availableTabs = ["overview", "progress", "gantt", "tasks", "milestones", "multiProzesse"];
 
@@ -296,7 +330,7 @@ const Dashboard = () => {
     };
 
     const handleOpenInLCMD = (projectName, processId) => {
-      const project = PROJECTS.find(p => p.name === projectName);
+      const project = projects.find(p => p.name === projectName);
       if (project && project.projectId) {
         let url = `https://share.lcmdigital.com/?project=${project.projectId}`;
         if (processId) {
@@ -308,7 +342,8 @@ const Dashboard = () => {
 
     const sharedProps = {
       data,
-      projects: PROJECTS,
+      projects: projects,
+      onUpdateProjects: handleUpdateProjects,
       selectedProjects,
       searchTerm,
       gewerkFilter: selectedGewerke,
@@ -329,7 +364,7 @@ const Dashboard = () => {
         return (
           <MultiProzesse
             data={data}
-            projects={PROJECTS}
+            projects={projects}
             selectedProjects={selectedProjects}
             gewerkFilter={selectedGewerke}
             bereichFilter={selectedBereiche}
@@ -439,7 +474,7 @@ const Dashboard = () => {
         </div>
       </div>
 
-      <div className={cn("w-full mx-auto mt-6", activeTab === "tasks" ? "px-0" : "px-4")}>
+      <div className={cn("w-full mx-auto mt-2", activeTab === "tasks" ? "px-0" : "px-4")}>
         <AnimatePresence initial={false}>
           {filtersOpen && (
             <motion.div
@@ -464,7 +499,7 @@ const Dashboard = () => {
                         Projekte vergleichen
                       </label>
                       <MultiSelect
-                        options={PROJECTS.map((p) => ({ label: p.name, value: p.name }))}
+                        options={projects.map((p) => ({ label: p.name, value: p.name }))}
                         value={selectedProjects}
                         onChange={setSelectedProjects}
                         placeholder="Projekte…"
