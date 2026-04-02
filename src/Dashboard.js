@@ -4,7 +4,7 @@ import * as XLSX from "xlsx";
 import Image from "next/image";
 import Logo from "./lcmd_logo_black.svg";
 import { FaTasks, FaFlagCheckered, FaRedo, FaSearch } from "react-icons/fa";
-import { Check, ChevronDown, X, ListFilter, GanttChartIcon, Binoculars, BarChart3, LayoutDashboard } from "lucide-react"
+import { Check, ChevronDown, X, ListFilter, GanttChartIcon, Binoculars, BarChart3, LayoutDashboard, ListTodo } from "lucide-react"
 import Fortschritt from "./Fortschritt";
 import GanttChart from "./GanttChart";
 import HeutigeAufgaben from "./HeutigeAufgaben";
@@ -21,7 +21,7 @@ const PROJECT_TABS = {
   overview: { label: "Übersicht", icon: LayoutDashboard },
   progress: { label: "Fortschritt", icon: BarChart3 },
   gantt: { label: "Gantt", icon: GanttChartIcon },
-  tasks: { label: "Vorgänge", icon: FaTasks },
+  tasks: { label: "Vorgänge", icon: ListTodo },
   milestones: { label: "Milestones", icon: FaFlagCheckered },
   multiProzesse: { label: "6-Wochen Vorschau", icon: Binoculars },
 }
@@ -408,7 +408,7 @@ const Dashboard = () => {
 
         {/* Tabs (kompakt, scrollbar) - Wie der Meilenstein Filter */}
         <div className="px-4 border-t flex items-center h-12 bg-white">
-          <div className="inline-flex h-10 items-center justify-center rounded-md bg-zinc-100 p-1 text-zinc-500 overflow-x-auto no-scrollbar max-w-full">
+          <div className="inline-flex h-10 items-center justify-center rounded-lg bg-zinc-100 p-1 text-zinc-500 overflow-x-auto no-scrollbar max-w-full">
             {availableTabs.map((tab) => {
               const tabConfig = PROJECT_TABS[tab];
               if (!tabConfig) return null;
@@ -424,7 +424,7 @@ const Dashboard = () => {
                     }
                   }}
                   className={cn(
-                    "inline-flex items-center justify-center whitespace-nowrap rounded-sm px-4 py-1.5 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-950 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 gap-2 flex-shrink-0",
+                    "inline-flex items-center justify-center whitespace-nowrap rounded-md px-4 py-1.5 text-sm font-medium transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-950 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 gap-2 flex-shrink-0",
                     isActive
                       ? "bg-white text-zinc-950 shadow-sm"
                       : "text-zinc-500 hover:bg-zinc-200 hover:text-zinc-950"
@@ -439,7 +439,7 @@ const Dashboard = () => {
         </div>
       </div>
 
-      <div className="w-full mx-auto px-4 mt-6">
+      <div className={cn("w-full mx-auto mt-6", activeTab === "tasks" ? "px-0" : "px-4")}>
         <AnimatePresence initial={false}>
           {filtersOpen && (
             <motion.div

@@ -1,0 +1,36 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find /c/Users/reuter/Downloads/projekt_dashboard_Multi_Sales -type f -name *.config.js -o -name *.config.ts -o -name next.config.js)",
+      "Bash(grep -E \"\\\\.\\(d\\\\.ts|ts\\)$\")",
+      "Bash(grep -r \"responsible\\\\|Responsible\" /c/Users/reuter/WebstormProjects/sdkTest/node_modules/@lcmd/core/dist/model --include=*.d.ts)",
+      "Bash(find C:UsersreuterDownloadsprojekt_dashboard_Multi_Sales -name *.js -path */api/* -o -name api.js)",
+      "Bash(grep -o \".[^;{}\\\\n]\\\\{0,40\\\\}getProcessParent[^;{}\\\\n]\\\\{0,40\\\\}\" \"C:/Users/reuter/WebstormProjects/sdkTest/node_modules/@lcmd/core/dist/index.js\")",
+      "Bash(grep -o \".[^;{}\\\\n]\\\\{0,60\\\\}getChildren[^;{}\\\\n]\\\\{0,60\\\\}\" \"C:/Users/reuter/WebstormProjects/sdkTest/node_modules/@lcmd/core/dist/index.js\")",
+      "Bash(grep -o \".[^;{}\\\\n]\\\\{0,80\\\\}_getProcessParents[^;{}\\\\n]\\\\{0,80\\\\}\" \"C:/Users/reuter/WebstormProjects/sdkTest/node_modules/@lcmd/core/dist/index.js\")",
+      "Bash(grep -o \"getAllProcessesIds[^;{\\(]\\\\{0,100\\\\}\" \"C:/Users/reuter/WebstormProjects/sdkTest/node_modules/@lcmd/core/dist/index.js\")",
+      "Bash(grep -o \".[^;{}]\\\\{0,60\\\\}wf[^;{}]\\\\{0,60\\\\}\" \"C:/Users/reuter/WebstormProjects/sdkTest/node_modules/@lcmd/core/dist/index.js\")",
+      "Bash(grep -o \".[^;{}]\\\\{0,80\\\\}\"\"wf\"\"[^;{}]\\\\{0,80\\\\}\" \"C:/Users/reuter/WebstormProjects/sdkTest/node_modules/@lcmd/core/dist/index.js\")",
+      "Bash(grep -o \".[^;{}]\\\\{0,100\\\\}cards.*resolve\\\\|resolve.*cards\\\\|cards.*value\\\\b\" \"C:/Users/reuter/WebstormProjects/sdkTest/node_modules/@lcmd/core/dist/index.js\")",
+      "Bash(grep -o \".[^;{}]\\\\{0,20\\\\}tid.*day.*date.*name.*s.*wf[^;{}]\\\\{0,60\\\\}\\\\|.[^;{}]\\\\{0,20\\\\}wf.*day.*date\\\\|wf: .\\\\{0,20\\\\}\" \"C:/Users/reuter/WebstormProjects/sdkTest/node_modules/@lcmd/core/dist/index.js\")",
+      "Bash(grep -o \".[^;{}\\(]\\\\{0,80\\\\}taktZone[^;{}]\\\\{0,80\\\\}\" \"C:/Users/reuter/WebstormProjects/sdkTest/node_modules/@lcmd/core/dist/index.js\")",
+      "Bash(grep -o \".[^;{}\\(]\\\\{0,40\\\\}row\\\\.l\\\\b[^;{}]\\\\{0,80\\\\}\" \"C:/Users/reuter/WebstormProjects/sdkTest/node_modules/@lcmd/core/dist/index.js\")",
+      "Bash(grep -o \".[^;{}\\(]\\\\{0,40\\\\}\"\"l\"\"\\\\s*:\\\\|row\\\\.l\\\\b\\\\|\\\\.l\\\\s*=\\\\|\\\\bl:\\\\s*\\\\[\" \"C:/Users/reuter/WebstormProjects/sdkTest/node_modules/@lcmd/core/dist/index.js\")",
+      "Bash(grep -o \".[^;{}\\(]\\\\{0,60\\\\}getProcessDetails[^;{}]\\\\{0,120\\\\}\" \"C:/Users/reuter/WebstormProjects/sdkTest/node_modules/@lcmd/core/dist/index.js\")",
+      "Bash(grep -o \".[^;{}\\(]\\\\{0,60\\\\}\"\"area\"\"\\\\|\"\"section\"\"\\\\|\"\"location\"\"\\\\|\"\"zone\"\"[^;{}]\\\\{0,60\\\\}\" \"C:/Users/reuter/WebstormProjects/sdkTest/node_modules/@lcmd/core/dist/index.js\")",
+      "Bash(grep -o \".[^;{}\\(]\\\\{0,80\\\\}\"\"location\"\"[^;{}]\\\\{0,80\\\\}\" \"C:/Users/reuter/WebstormProjects/sdkTest/node_modules/@lcmd/core/dist/index.js\")",
+      "Bash(grep -o \".[^;{}\\(]\\\\{0,40\\\\}getProcessDetails\\\\b[^;{}]\\\\{0,120\\\\}\" \"C:/Users/reuter/WebstormProjects/sdkTest/node_modules/@lcmd/core/dist/index.js\")",
+      "Bash(grep -o \".[^;{}\\(]\\\\{0,80\\\\}ProjectBuilder[^;{}]\\\\{0,80\\\\}\" \"C:/Users/reuter/WebstormProjects/sdkTest/node_modules/@lcmd/core/dist/index.js\")",
+      "Bash(grep -o \"class ProjectBuilder[^;{}]*\\\\|ProjectBuilder\\\\s*{[^}]\\\\{0,200\\\\}\" \"C:/Users/reuter/WebstormProjects/sdkTest/node_modules/@lcmd/core/dist/index.js\")",
+      "Bash(grep -o \"class ParticleProjectBuilder[^;{}]*\\\\|.\\\\{0,20\\\\}getRow\\\\b\\\\|.\\\\{0,20\\\\}buildRow\\\\b\\\\|.\\\\{0,20\\\\}getExportRow\\\\b\\\\|.\\\\{0,20\\\\}toRow\\\\b\\\\|.\\\\{0,20\\\\}getProcess\\\\b\" \"C:/Users/reuter/WebstormProjects/sdkTest/node_modules/@lcmd/core/dist/index.js\")",
+      "Bash(grep -o \".[^;{}\\(]\\\\{0,100\\\\}exportHelper\\\\.[a-zA-Z]*\\\\|helper\\\\.[a-zA-Z]*\\\\b\" \"C:/Users/reuter/WebstormProjects/sdkTest/node_modules/@lcmd/core/dist/index.js\")",
+      "Bash(grep -o \".[^;{}\\(]\\\\{0,60\\\\}argb[^;{}]\\\\{0,60\\\\}\" \"C:/Users/reuter/WebstormProjects/sdkTest/node_modules/@lcmd/core/dist/index.js\")",
+      "Bash(grep -o \"._trade.color[^;{}]\\\\{0,120\\\\}\" \"C:/Users/reuter/WebstormProjects/sdkTest/node_modules/@lcmd/core/dist/index.js\")",
+      "Bash(grep -o \".[^;{}\\(]\\\\{0,100\\\\}_trade\\\\.color[^;{}]\\\\{0,100\\\\}\" \"C:/Users/reuter/WebstormProjects/sdkTest/node_modules/@lcmd/core/dist/index.js\")",
+      "Bash(grep -o \".[^;{}\\(]\\\\{0,60\\\\}getStatusForCards[^;{}]\\\\{0,120\\\\}\" \"C:/Users/reuter/WebstormProjects/sdkTest/node_modules/@lcmd/core/dist/index.js\")",
+      "Bash(grep -o \"var getStatusForCards = [^;{]\\\\{0,200\\\\}\" \"C:/Users/reuter/WebstormProjects/sdkTest/node_modules/@lcmd/core/dist/index.js\")",
+      "Bash(grep -o \"getStatusForCards = .referenceDay[^;{}]\\\\{0,300\\\\}\" \"C:/Users/reuter/WebstormProjects/sdkTest/node_modules/@lcmd/core/dist/index.js\")",
+      "Bash(grep -o \"getStatusForCards = .referenceDay, endDate, cards. =>[^;]\\\\{0,400\\\\}\" \"C:/Users/reuter/WebstormProjects/sdkTest/node_modules/@lcmd/core/dist/index.js\")"
+    ]
+  }
+}

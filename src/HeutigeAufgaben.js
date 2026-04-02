@@ -158,7 +158,7 @@ const HeutigeAufgaben = ({ data, projects, selectedProjects, gewerkFilter, berei
   }, [data, projects, selectedProjects, gewerkFilter, bereichFilter, responsiblesFilter, searchTerm]);
 
   return (
-    <div className="p-6 w-full max-w-[1600px] mx-auto space-y-8">
+    <div className="p-6 w-full space-y-8">
       <motion.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -168,9 +168,9 @@ const HeutigeAufgaben = ({ data, projects, selectedProjects, gewerkFilter, berei
           <h2 className="text-3xl font-black tracking-tight text-slate-800">Aktuelle Vorgänge</h2>
           <p className="text-slate-500 mt-1 font-medium">Alle laufenden Aufgaben im Portfolio für den heutigen Tag.</p>
         </div>
-        <Badge variant="outline" className="w-fit px-4 py-1.5 border-blue-200 bg-blue-50 text-blue-700 font-bold">
+        <div className="w-fit px-4 py-1.5 text-slate-400 font-bold">
           {todayProcesses.length} Aufgaben aktiv
-        </Badge>
+        </div>
       </motion.div>
 
       <Card className="bg-white/80 backdrop-blur-md border-slate-200 shadow-2xl rounded-3xl overflow-hidden transition-all duration-500 hover:shadow-primary/5">
@@ -244,7 +244,7 @@ const HeutigeAufgaben = ({ data, projects, selectedProjects, gewerkFilter, berei
                                   <FaTools 
                                     className={cn(
                                       "h-3 w-3 animate-spin-slow",
-                                      process.progress < process.soll - 10 ? "text-orange-500" : "text-blue-500"
+                                      process.progress < process.soll ? "text-orange-500" : "text-blue-500"
                                     )} 
                                   />
                                 )}
@@ -260,7 +260,7 @@ const HeutigeAufgaben = ({ data, projects, selectedProjects, gewerkFilter, berei
                                 className={cn(
                                   "h-full rounded-full transition-all duration-1000",
                                   process.progress >= 100 ? "bg-emerald-500" : 
-                                  process.progress < process.soll - 10 ? "bg-orange-500" : "bg-blue-500"
+                                  process.progress < process.soll ? "bg-orange-500" : "bg-blue-500"
                                 )}
                               />
                             </div>
@@ -270,13 +270,13 @@ const HeutigeAufgaben = ({ data, projects, selectedProjects, gewerkFilter, berei
                           <div className="flex flex-col items-end gap-1">
                             <span className={cn(
                               "text-xs font-black",
-                              process.progress < process.soll ? "text-red-500" : "text-blue-600"
+                              process.progress < process.soll ? "text-orange-500" : "text-blue-600"
                             )}>
                               {process.soll}%
                             </span>
                             <div className="w-16 h-1 bg-slate-100 rounded-full overflow-hidden">
                               <div 
-                                className={cn("h-full transition-all duration-700", process.progress < process.soll ? "bg-red-400" : "bg-blue-400")}
+                                className={cn("h-full transition-all duration-700", process.progress < process.soll ? "bg-orange-500" : "bg-blue-400")}
                                 style={{ width: `${process.soll}%` }}
                               />
                             </div>
