@@ -38,24 +38,16 @@ const parseResponsibles = (val) => {
 };
 
 const INITIAL_PROJECTS = [
-    { 
-      name: "Berlin", 
-      url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=c200addc-f9f9-480e-8eb9-9329769ef859", 
-      projectId: "c200addc-f9f9-480e-8eb9-9329769ef859",
-      image: null
-    },
-    { 
-      name: "Köln", 
-      url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=7a3c9314-f7b3-4dfd-b878-4b9d30769377", 
-      projectId: "7a3c9314-f7b3-4dfd-b878-4b9d30769377",
-      image: null
-    },
-    { 
-      name: "München", 
-      url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=7dfbedbb-9966-469e-9c0c-6c9dfbf66516", 
-      projectId: "7dfbedbb-9966-469e-9c0c-6c9dfbf66516",
-      image: null
-    },
+  { name: "202119_Pfullingen", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=95932af3-ba35-47dd-b135-46e72b8b7265", projectId: "95932af3-ba35-47dd-b135-46e72b8b7265" },
+  { name: "Frickenhausen neu ", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=5a79ed65-48db-45f5-8b36-e3de06f53407", projectId: "5a79ed65-48db-45f5-8b36-e3de06f53407" },
+  { name: "202501 Reutlingen", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=e150ee2d-7349-4af9-8ab7-13b0fc884a67", projectId: "e150ee2d-7349-4af9-8ab7-13b0fc884a67" },
+  { name: "202402 – Kirchheim am Neckar", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=0dc7cfab-34b5-4ec3-9385-6e47a71e6998", projectId: "0dc7cfab-34b5-4ec3-9385-6e47a71e6998" },
+  { name: "21506_Ditzingen-Ob dem Korntaler Weg_REH + MFH (A+V bis Abnahme)", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=bf8871fa-3d62-47e2-bd88-c97f89c02c16", projectId: "bf8871fa-3d62-47e2-bd88-c97f89c02c16" },
+  { name: "Ladenburg III", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=0fdda559-64ac-4c20-8634-4545540918e9", projectId: "0fdda559-64ac-4c20-8634-4545540918e9" },
+  { name: "Gernsheim", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=9053e4dc-927d-4701-a1c2-4cc049fc6093", projectId: "9053e4dc-927d-4701-a1c2-4cc049fc6093" },
+  { name: "Hasloh II", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=0bc6d994-6503-44db-92dd-ba1c32dd9c00", projectId: "0bc6d994-6503-44db-92dd-ba1c32dd9c00" },
+  { name: "202502 Fuchshof, Ludwigsburg", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=91a04803-017e-4ce7-a805-fb6ab3019563", projectId: "91a04803-017e-4ce7-a805-fb6ab3019563" },
+  { name: "Emmering_neu", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=d95ba393-5e94-495d-8a7e-1ca19cf0b87d", projectId: "d95ba393-5e94-495d-8a7e-1ca19cf0b87d" },
 ];
 
 const TOKEN = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI3N2U3OGMyMC0yNmVhLTQ3OWQtYjIzMS00MGRkNzIxYWZiNDEiLCJlbWFpbCI6ImNocmlzdGlhbi5yZXV0ZXJAbGNtZGlnaXRhbC5jb20iLCJ0cyI6NjQ4LCJsaWMiOnsiZWRpdCI6MX0sImlhdCI6MTc0MTE4MzQ5Mn0.a42tshg1OH8gzYu0AsEaeymx8ebWOdNA2rZzz9rdd1c";
