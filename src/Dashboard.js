@@ -4,11 +4,12 @@ import * as XLSX from "xlsx";
 import Image from "next/image";
 import Logo from "./lcmd_logo_black.svg";
 import { FaTasks, FaFlagCheckered, FaRedo, FaSearch } from "react-icons/fa";
-import { Check, ChevronDown, X, ListFilter, GanttChartIcon, Binoculars, BarChart3, LayoutDashboard, ListTodo } from "lucide-react"
+import { Check, ChevronDown, X, ListFilter, GanttChartIcon, Binoculars, BarChart3, LayoutDashboard, ListTodo, GitCompare } from "lucide-react"
 import Fortschritt from "./Fortschritt";
 import GanttChart from "./GanttChart";
 import HeutigeAufgaben from "./HeutigeAufgaben";
 import Meilensteine from "./Meilensteine";
+import MeilensteinVergleich from "./MeilensteinVergleich";
 import MultiProzesse from "./MultiProzesse";
 import Overview from "./Overview";
 import { Card, CardContent, CardHeader, CardTitle } from "./components/ui/card";
@@ -24,6 +25,7 @@ const PROJECT_TABS = {
   tasks: { label: "Vorgänge", icon: ListTodo },
   milestones: { label: "Milestones", icon: FaFlagCheckered },
   multiProzesse: { label: "6-Wochen Vorschau", icon: Binoculars },
+  meilensteinVergleich: { label: "Meilenstein-Vergleich", icon: GitCompare },
 }
 // ---- Helper für "Responsibles" (gleich wie im Modul) ------------------------
 const RESPONSIBLE_KEYS = [
@@ -44,7 +46,7 @@ const INITIAL_PROJECTS = [
   { name: "202402 – Kirchheim am Neckar", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=0dc7cfab-34b5-4ec3-9385-6e47a71e6998", projectId: "0dc7cfab-34b5-4ec3-9385-6e47a71e6998" },
   { name: "21506_Ditzingen-Ob dem Korntaler Weg_REH + MFH (A+V bis Abnahme)", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=bf8871fa-3d62-47e2-bd88-c97f89c02c16", projectId: "bf8871fa-3d62-47e2-bd88-c97f89c02c16" },
   { name: "Ladenburg III", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=0fdda559-64ac-4c20-8634-4545540918e9", projectId: "0fdda559-64ac-4c20-8634-4545540918e9" },
-  { name: "Gernsheim", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=9053e4dc-927d-4701-a1c2-4cc049fc6093", projectId: "9053e4dc-927d-4701-a1c2-4cc049fc6093" },
+  { name: "Gernsheim", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=9d154915-8670-4875-97ba-0fee1f044721", projectId: "9d154915-8670-4875-97ba-0fee1f044721" },
   { name: "Hasloh II", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=0bc6d994-6503-44db-92dd-ba1c32dd9c00", projectId: "0bc6d994-6503-44db-92dd-ba1c32dd9c00" },
   { name: "202502 Fuchshof, Ludwigsburg", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=91a04803-017e-4ce7-a805-fb6ab3019563", projectId: "91a04803-017e-4ce7-a805-fb6ab3019563" },
   { name: "Emmering_neu", url: "https://lcmd-rest.azurewebsites.net/api/rest?pid=d95ba393-5e94-495d-8a7e-1ca19cf0b87d", projectId: "d95ba393-5e94-495d-8a7e-1ca19cf0b87d" },
@@ -238,7 +240,7 @@ const Dashboard = () => {
     localStorage.setItem("dashboard_projects", JSON.stringify(newProjects));
   };
 
-  const availableTabs = ["overview", "progress", "gantt", "tasks", "milestones", "multiProzesse"];
+  const availableTabs = ["overview", "progress", "gantt", "tasks", "milestones", "multiProzesse", "meilensteinVergleich"];
 
   const alleGewerke = useMemo(() => data
     ? [...new Set(
@@ -352,6 +354,18 @@ const Dashboard = () => {
       case "gantt": return <GanttChart {...sharedProps} />;
       case "tasks": return <HeutigeAufgaben {...sharedProps} />;
       case "milestones": return <Meilensteine {...sharedProps} />;
+      case "meilensteinVergleich":
+        return (
+          <MeilensteinVergleich
+            data={data}
+            projects={projects}
+            selectedProjects={selectedProjects}
+            searchTerm={searchTerm}
+            gewerkFilter={selectedGewerke}
+            bereichFilter={selectedBereiche}
+            responsiblesFilter={selectedResponsibles}
+          />
+        );
       case "multiProzesse":
         return (
           <MultiProzesse
